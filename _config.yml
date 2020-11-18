@@ -1,21 +1,21 @@
 # Site settings
-title: Thomas Zühlke
+title: Gianpaolo Filippa
 description: 'Business Card Page'
-url: 'http://thomas.zuehlke.family'
+url: ''
 baseurl: ''
-profilepic: '/images/tzuehlke.jpg'
-bkimage: '/images/bk1.jpg'
-google_analytics: UA-XXXXXX-X
-font_awesome: 'XXXXXXXXXX.js'
+profilepic: '/images/gianpaolo.jpg'
+bkimage: '/images/gianpaolobg.jpg'
+google_analytics: G-GEHJH7ZDF7
+font_awesome: '2e3bf954c7.js'
 
 author:
-  name: 'Thomas Zühlke'
-  email: info@thomas-zuehlke.de
-  twitter_username: thomzuehlke
+  name: 'Gianpaolo Filippa'
+  email: gianpaolof@gmail.com
+#  twitter_username: thomzuehlke
 #  facebook_username: joshgerdes
-  github_username:  tzuehlke
-  linkedin_username:  thomas-zühlke-889182165
-  meetup_name: Azure-Meetup-Rostock-MV
+  github_username:  gianpaolof
+#  linkedin_username:  thomas-zühlke-889182165
+#  meetup_name: Azure-Meetup-Rostock-MV
 
 # Build settings
 destination: _site
