@@ -86,6 +86,17 @@
               </li>
             {% endif %}
 
+            {% if site.author.photo_name %}
+            <!-- Meetup -->
+            <li class="navigation__item">
+              <a href="https://www.google.com" title="Meetup {{ site.author.photo_name }}" target="_blank">
+                <!--<div style="font-size: 1.4rem;"><i class="fab fa-meetup fa-lg"></i></div>-->
+               <i class="fas fa-camera-retro"></i>
+                <span class="label">Photo</span>
+              </a>
+            </li>
+            {% endif %}
+              
             </ul>
           </nav>
           
