@@ -1,37 +1,78 @@
 # Site settings
-title: Gianpaolo Filippa
-description: 'Business Card Page'
-url: ''
-baseurl: ''
-profilepic: '/images/gianpaolo3.jpg'
-bkimage: '/images/gianpaolobg.jpg'
-google_analytics: G-GEHJH7ZDF7
+title: Gianpaolo F
+email: "gianpaolof@gmail.com"
+description: "Photo Journal"
+url: ""
+baseurl: ""
+facebook_username: ""
+twitter_username: ""
+instagram_username: ""
+github_username:  "gianpaolof"
+deviantart_username: ""
+flickr_username: ""
+discus_shortname: ""
+share: true
+
+google_analytics: G-2MLZ4RFGL3
+
+# Owner/author information
+owner:
+  name:   photorama
+  avatar: avatar.png
+  favicon: favicon.ico
+  info: photography website template
+
+# Settings for comments helper
+# Set 'provider' to the comment provider you want to use. (i.e.  Disqus, Intense Debate, livefyre, or Facebook Comments)
+# Set 'provider' to false to turn commenting off globally.
+#Set 'provider: false' to disable comments globally.
+# Disable comments for individual pages/posts by specifying 'comments: false' in the page/post YAML Front Matter.
+#
+comments :
+  provider : disqus
+  disqus :
+    short_name : ""
+
+#fonts
 font_awesome: '2e3bf954c7.js'
 
-author:
-  name: 'Gianpaolo Filippa'
-  email: gianpaolof@gmail.com
-#  twitter_username: thomzuehlke
-#  facebook_username: joshgerdes
-  github_username:  gianpaolof
-  linkedin_username:  gianpaolofilippa
-  photo_name: photo
-#  meetup_name: Azure-Meetup-Rostock-MV
+# Internal nav
+nav:
+  - HOME: "https://gianpaolof.github.io/"  
+  - GALLERY: "https://gianpaolof.github.io/gallery/"  
+  - ABOUT: "https://gianpaolof.github.io/about/"
+
+# All translation keys
+translations:
+ # 404.html
+  permalink: "/404.html"
+
+# Server
+destination:      	 ./_site
+port:             	 4000
+
 
 # Build settings
-destination: _site
 markdown: kramdown
 highlighter: rouge
+permalink: pretty
+paginate: 5
+paginate_path: "/journal/page:num/"
+permalink: "/journal/:title/"
+categories_path: "/journal/category/"
+tags_path: "/journal/tag/"
+gems: 
+ - jekyll-paginate
+exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
 
-sass:
-    sass_dir: _sass
-    style: compressed
-
-kramdown:
-  # use Github Flavored Markdown
-  input: GFM
-  # do not replace newlines by <br>s
-  hard_wrap: false
-
-#plugins: ['jekyll-paginate']
-exclude: ['README.md', 'screenshot-overview.png']
+# SiteMap
+sitemap:
+    file: "/sitemap.xml"
+    exclude:
+        - "/atom.xml"
+        - "/feed.xml"
+        - "/feed/index.xml"
+    include_posts:
+        - "/writing/"
+    change_frequency_name: "change_frequency"
+    priority_name: "priority"
