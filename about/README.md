@@ -12,11 +12,8 @@
 <span style="color:white">And please, judge tenderly of me. </span>
 
 
-<span style="color:white">Yours truly, </span>
+<span style="color:white">Yours truly,</span></br>
 <span style="color:white">Gianpaolo </span>
-<br>
-
-<h3 align="right">Appreciate your feedbacks <img src="https://media.giphy.com/media/26FPJGjhefSJuaRhu/giphy.gif" width="60px"></h3>
 
 <img align="right" alt="GIF" height="150px" src="https://media.giphy.com/media/J5B1Y8QZnzXXbLQIBu/giphy.gif" />
 
