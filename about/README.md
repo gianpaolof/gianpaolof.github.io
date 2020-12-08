@@ -22,5 +22,6 @@
 [![Spotify](https://novatorem-roan-eight.vercel.app/api/spotify)](https://open.spotify.com/user/gianpaolof)
 
 
-
-<img align="center" src="https://raw.githubusercontent.com/gianpaolof/gianpaolof.github.io/master/turin.png"/>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gianpaolof/gianpaolof.github.io/master/turin.png />
+</p>
