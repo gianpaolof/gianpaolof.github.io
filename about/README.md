@@ -1,7 +1,7 @@
 
 ---
 
-<span style="color:white">Hey there! </span> <img src="https://raw.githubusercontent.com/gianpaolof/gianpaolof.github.io/master/wave.gif" width="70px">
+<span style="color:white">Hey there! </span> <img src="https://raw.githubusercontent.com/gianpaolof/gianpaolof.github.io/master/wave.gif" width="80px">
 
 <span style="color:white">My hard-drive was almost full so I decided it was time to upload some of my photos somewhere. And here I am. </span>
 <span style="color:white">Before going digital I used a Nikon N6006 but, to be honest, my analogue photos are almost total rubbish. </span>
@@ -15,7 +15,7 @@
 <span style="color:white">Yours truly,</span></br>
 <span style="color:white">Gianpaolo </span>
 
-<img align="right" alt="GIF" height="150px" src="https://media.giphy.com/media/J5B1Y8QZnzXXbLQIBu/giphy.gif" />
+<img align="right" alt="GIF" height="170px" src="https://media.giphy.com/media/J5B1Y8QZnzXXbLQIBu/giphy.gif" />
 
 <span style="color:white">Spotify Playing 🎧</span>
 
