@@ -1,7 +1,6 @@
 
 ---
-<span style="color:white">
-<h6>On a snowy night in Torino, Italy, Dec. 6th 2020 AD (The covid years)</h6>
+<span style="color:white">On a snowy night in Torino, Italy, Dec. 6th 2020 AD (The covid years)</span>
 <br>
 <h6>My hard-drive was almost full so I decided it was time to upload some of my photos somewhere. And here I am.</h6>
 <h6>Before going digital I used a Nikon N6006 but, to be honest, my analogue photos are almost total rubbish.</h6>
@@ -14,7 +13,7 @@
 <h6>Yours truly,</h6>
 <h6>Gianpaolo</h6>
 <br>
-</span>
+
 <img align="right" alt="GIF" height="170px" src="https://media.giphy.com/media/J5B1Y8QZnzXXbLQIBu/giphy.gif" />
 
 <span style="color:white">Spotify Playing 🎧</span>
