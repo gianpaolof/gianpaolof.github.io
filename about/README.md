@@ -23,4 +23,4 @@
 
 
 
-<img src="https://raw.githubusercontent.com/gianpaolof/gianpaolof.github.io/master/turin.png"/>
+<img align="center" src="https://raw.githubusercontent.com/gianpaolof/gianpaolof.github.io/master/turin.png"/>
