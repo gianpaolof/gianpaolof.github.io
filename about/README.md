@@ -1,6 +1,6 @@
 
 ---
-<h4> Hey there! <img src="https://raw.githubusercontent.com/verma-anushka/verma-anushka/master/gifs/wave.gif" width="30px"></h4>
+<span style="color:white">
 <h6>On a snowy night in Torino, Italy, Dec. 6th 2020 AD (The covid years)</h6>
 <br>
 <h6>My hard-drive was almost full so I decided it was time to upload some of my photos somewhere. And here I am.</h6>
@@ -14,7 +14,7 @@
 <h6>Yours truly,</h6>
 <h6>Gianpaolo</h6>
 <br>
-
+</span>
 <img align="right" alt="GIF" height="170px" src="https://media.giphy.com/media/J5B1Y8QZnzXXbLQIBu/giphy.gif" />
 
 <span style="color:white">Spotify Playing 🎧</span>
