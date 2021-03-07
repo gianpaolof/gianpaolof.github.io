@@ -17,10 +17,10 @@ google_analytics: G-5758K798LR
 
 # Owner/author information
 owner:
-  name:   photorama
+  name:   gianpaolo filippa
   avatar: avatar.png
   favicon: favicon.ico
-  info: photography website template
+  info: photography website
 
 # Settings for comments helper
 # Set 'provider' to the comment provider you want to use. (i.e.  Disqus, Intense Debate, livefyre, or Facebook Comments)
@@ -51,18 +51,11 @@ translations:
 destination:      	 ./_site
 port:             	 4000
 
-
 # Build settings
 markdown: kramdown
 highlighter: rouge
 permalink: pretty
-paginate: 5
-paginate_path: "/journal/page:num/"
-permalink: "/journal/:title/"
-categories_path: "/journal/category/"
-tags_path: "/journal/tag/"
-gems: 
- - jekyll-paginate
+gems:
  - jekyll-seo-tag
  - jekyll-sitemap
 exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
