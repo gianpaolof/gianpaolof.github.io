@@ -19,7 +19,7 @@
 
 <span style="color:white">Spotify Playing 🎧</span>
 
-[![Spotify](https://novatorem-roan-eight.vercel.app/api/spotify)](https://open.spotify.com/user/gianpaolof)
+[![Spotify](https://novatorem-gp72.vercel.app/api/spotify?background_color=0d1117&border_color=ffffff)](https://open.spotify.com/user/31sjaqnofawp6qkhk24ltj63kxgm)
 
 
 <p align="center">
