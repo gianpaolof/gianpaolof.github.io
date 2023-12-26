@@ -5,16 +5,12 @@
 
 <span style="color:white">My hard-drive was almost full so I decided it was time to upload some of my photos somewhere. And here I am. </span></br>
 <span style="color:white">Before going digital I used a Nikon N6006 but, to be honest, my analogue photos are almost total rubbish. </span></br>
-<span style="color:white">I bought my first digital camera in 2006 (a D70s) and today I use a Nikon D800. My most precious lens is a Nikkor AF-S VR 300mm f2.8</span>
-<span style="color:white">I really like sport photography, especially MotoGP, especially Valentino Rossi. </span>
-
-<span style="color:white">Thank you for visiting my page, come back every now and then because I will add some more photos.</span></br>
-<span style="color:white">And please, judge tenderly of me. </span>
-
+<span style="color:white">I bought my first digital camera in 2006 (a D70s) and today I use a Leica SL2. My most precious lens is a Nikkor AF-S VR 300mm f2.8</span>
+<span style="color:white">This is for my dad, Giacinto. Ciao papà</span>
 
 <span style="color:white">Yours truly,</span></br>
 <span style="color:white">Gianpaolo </span>
-<span style="color:black;">March F1 motogp Paris Parigi Milan Napoli St. Patrick Champions League</span>
+<span style="color:black;">robert mapplethorpe vivian maiermapplethorpe robert david lachapelle wolfgang tillmans william klein wildlife photographer of the saul leiter</span>
 <img align="right" alt="GIF" height="170px" src="https://media.giphy.com/media/J5B1Y8QZnzXXbLQIBu/giphy.gif" />
 
 <span style="color:white">Spotify Playing 🎧</span>
