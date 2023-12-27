@@ -10,7 +10,6 @@
 <span style="color:white">This is for my dad, Giacinto. Ciao papà</span></br>
 
 <span style="color:white">Gianpaolo </span>
-<span style="color:black;">robert mapplethorpe vivian maiermapplethorpe robert david lachapelle wolfgang tillmans william klein wildlife photographer of the saul leiter</span>
 <img align="right" alt="GIF" height="170px" src="https://media.giphy.com/media/J5B1Y8QZnzXXbLQIBu/giphy.gif" />
 
 <span style="color:white">Spotify Playing 🎧</span>
