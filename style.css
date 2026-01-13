@@ -773,20 +773,20 @@ body {
   letter-spacing: 0.05em;
   white-space: nowrap;
 
-  color: rgba(255, 255, 255, 0.12);
-  text-shadow: 0 0 30px rgba(124, 58, 237, 0.3);
+  color: rgba(255, 255, 255, 0.25);
+  text-shadow: 0 0 30px rgba(124, 58, 237, 0.4);
 
   animation: float-drift 60s ease-in-out infinite;
 }
 
 .floating-equation .eq-var {
   font-weight: bold;
-  color: rgba(0, 212, 255, 0.2);
+  color: rgba(0, 212, 255, 0.35);
 }
 
 .floating-equation .eq-op {
   margin: 0 0.3em;
-  color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.2);
 }
 
 .floating-equation .eq-part {
