@@ -848,9 +848,8 @@ export class FluidSolver {
             case 5: r = val; g = p; b = q; break;
         }
 
-        // BRIGHT colors! Pavel uses 0.15 * 10 = 1.5 intensity
-        // We go higher for more vibrant effect
-        return [r * 1.2, g * 1.2, b * 1.2];
+        // Reduced intensity to prevent white blowout when colors mix
+        return [r * 0.7, g * 0.7, b * 0.7];
     }
 
     /**

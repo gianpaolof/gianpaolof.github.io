@@ -218,10 +218,10 @@ class InputManager {
      * @returns {Array} RGB color array - BRIGHT!
      */
     generateDyeColor() {
-        // Random hue, full saturation and value (like Pavel)
+        // Random hue, full saturation, reduced value to avoid white blowout
         const rgb = this.HSVtoRGB(Math.random(), 1.0, 1.0);
-        // Bright but not blinding (Pavel uses ~1.0-1.2)
-        return rgb.map(c => c * 1.2);
+        // Reduced intensity to prevent blinding white when colors mix
+        return rgb.map(c => c * 0.7);
     }
 
     /**
