@@ -23,6 +23,7 @@ import {
 
 import { loadShaders, SHADER_PATHS } from './shader-loader.js';
 import { COLORS, DEFAULT_CONFIG, mergeConfig } from './config.js';
+import { EffectsRenderer } from './effects.js';
 
 // =============================================================================
 // FLUID SOLVER CLASS
@@ -92,6 +93,9 @@ export class FluidSolver {
         this._fbos = {};
         this._vao = null;
         this._shaders = null; // Loaded shader sources
+
+        // Effects renderer (initialized after programs are created)
+        this._effects = null;
     }
 
     /**
@@ -115,6 +119,16 @@ export class FluidSolver {
 
         // Create framebuffer objects
         this._createFBOs();
+
+        // Initialize effects renderer with effect programs
+        this._effects = new EffectsRenderer(gl, {
+            bloomPrefilter: this._programs.bloomPrefilter,
+            blur: this._programs.blur,
+            bloomFinal: this._programs.bloomFinal,
+            sunraysMask: this._programs.sunraysMask,
+            sunrays: this._programs.sunrays
+        }, this.formats, this.config);
+        this._effects.initFBOs(this.canvas.width, this.canvas.height);
 
         // Create VAO for attribute-less rendering
         this._vao = gl.createVertexArray();
@@ -317,90 +331,7 @@ export class FluidSolver {
             gl, dyeSize, dyeSize, DYE_FORMAT
         );
 
-        // Bloom FBOs - create pyramid of decreasing resolution
-        this._createBloomFBOs();
-
-        // Sunrays FBOs - Pavel's volumetric light effect
-        this._createSunraysFBOs();
-    }
-
-    /**
-     * Creates bloom framebuffer pyramid.
-     * @private
-     */
-    _createBloomFBOs() {
-        const gl = this.gl;
-        const { bloomIterations } = this.config;
-        const { DYE_FORMAT } = this.formats;
-
-        // Start with half resolution of canvas
-        let width = Math.floor(this.canvas.width / 2);
-        let height = Math.floor(this.canvas.height / 2);
-
-        // Minimum size
-        const minSize = 32;
-
-        this._bloomFBOs = [];
-        this._bloomTempFBOs = []; // Temp FBOs for ping-pong blur at each level
-
-        for (let i = 0; i < bloomIterations; i++) {
-            if (width < minSize || height < minSize) break;
-
-            const texture = createTexture(gl, width, height, DYE_FORMAT);
-            this._bloomFBOs.push({
-                texture,
-                framebuffer: createFramebuffer(gl, texture),
-                width,
-                height
-            });
-
-            // Create matching temp FBO for this level
-            const tempTex = createTexture(gl, width, height, DYE_FORMAT);
-            this._bloomTempFBOs.push({
-                texture: tempTex,
-                framebuffer: createFramebuffer(gl, tempTex),
-                width,
-                height
-            });
-
-            width = Math.floor(width / 2);
-            height = Math.floor(height / 2);
-        }
-
-        // Keep legacy _bloomTemp for compatibility (points to first temp)
-        if (this._bloomTempFBOs.length > 0) {
-            this._bloomTemp = this._bloomTempFBOs[0];
-        }
-    }
-
-    /**
-     * Creates sunrays framebuffers for volumetric light effect.
-     * @private
-     */
-    _createSunraysFBOs() {
-        const gl = this.gl;
-        const { sunraysResolution } = this.config;
-        const { DYE_FORMAT } = this.formats;
-
-        // Sunrays FBO at lower resolution for performance
-        const res = sunraysResolution || 196;
-
-        const sunraysTexture = createTexture(gl, res, res, DYE_FORMAT);
-        this._sunraysFBO = {
-            texture: sunraysTexture,
-            framebuffer: createFramebuffer(gl, sunraysTexture),
-            width: res,
-            height: res
-        };
-
-        // Temp FBO for sunrays blur
-        const sunraysTempTexture = createTexture(gl, res, res, DYE_FORMAT);
-        this._sunraysTemp = {
-            texture: sunraysTempTexture,
-            framebuffer: createFramebuffer(gl, sunraysTempTexture),
-            width: res,
-            height: res
-        };
+        // Note: Bloom and sunrays FBOs are now managed by EffectsRenderer
     }
 
     /**
@@ -838,16 +769,15 @@ export class FluidSolver {
         }
 
         const gl = this.gl;
-        const { bloomEnabled, bloomIntensity, sunraysEnabled, sunraysWeight } = this.config;
+        const { bloomEnabled, bloomIntensity, sunraysEnabled } = this.config;
 
-        // Apply bloom if enabled
-        if (bloomEnabled && this._bloomFBOs && this._bloomFBOs.length > 0) {
-            this._applyBloom();
+        // Apply post-processing effects via EffectsRenderer
+        if (bloomEnabled && this._effects.hasBloom) {
+            this._effects.applyBloom(this._fbos.dye.texture, this._drawQuad.bind(this));
         }
 
-        // Apply sunrays if enabled - Pavel's key visual effect!
-        if (sunraysEnabled && this._sunraysFBO) {
-            this._applySunrays();
+        if (sunraysEnabled && this._effects.hasSunrays) {
+            this._effects.applySunrays(this._fbos.dye.texture, this._drawQuad.bind(this));
         }
 
         // Final display pass
@@ -863,16 +793,16 @@ export class FluidSolver {
         gl.uniform1i(program.uniforms.u_texture, 0);
 
         // Bind bloom texture if enabled
-        if (bloomEnabled && this._bloomFBOs && this._bloomFBOs.length > 0) {
+        if (bloomEnabled && this._effects.hasBloom) {
             gl.activeTexture(gl.TEXTURE1);
-            gl.bindTexture(gl.TEXTURE_2D, this._bloomFBOs[0].texture);
+            gl.bindTexture(gl.TEXTURE_2D, this._effects.bloomTexture);
             gl.uniform1i(program.uniforms.u_bloom, 1);
         }
 
         // Bind sunrays texture if enabled
-        if (sunraysEnabled && this._sunraysFBO) {
+        if (sunraysEnabled && this._effects.hasSunrays) {
             gl.activeTexture(gl.TEXTURE2);
-            gl.bindTexture(gl.TEXTURE_2D, this._sunraysFBO.texture);
+            gl.bindTexture(gl.TEXTURE_2D, this._effects.sunraysTexture);
             gl.uniform1i(program.uniforms.u_sunrays, 2);
         }
 
@@ -887,141 +817,6 @@ export class FluidSolver {
         );
 
         this._drawQuad();
-    }
-
-    /**
-     * Applies multi-pass bloom effect.
-     * @private
-     */
-    _applyBloom() {
-        const gl = this.gl;
-        const { bloomThreshold, bloomSoftKnee, bloomIntensity } = this.config;
-
-        // Number of blur iterations per level (Pavel does multiple for smoother bloom)
-        const BLUR_ITERATIONS = 2;
-
-        // Calculate soft knee curve
-        const knee = bloomThreshold * bloomSoftKnee;
-        const curve = [bloomThreshold - knee, knee * 2, 0.25 / (knee + 0.00001)];
-
-        // Pass 1: Prefilter - extract bright areas into first bloom FBO
-        const prefilterProgram = this._programs.bloomPrefilter;
-        prefilterProgram.use();
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
-        gl.uniform1i(prefilterProgram.uniforms.u_texture, 0);
-        gl.uniform3f(prefilterProgram.uniforms.u_curve, curve[0], curve[1], curve[2]);
-        gl.uniform1f(prefilterProgram.uniforms.u_threshold, bloomThreshold);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._bloomFBOs[0].framebuffer);
-        gl.viewport(0, 0, this._bloomFBOs[0].width, this._bloomFBOs[0].height);
-        this._drawQuad();
-
-        // Pass 2: Downsample and blur at each pyramid level
-        const blurProgram = this._programs.blur;
-        blurProgram.use();
-
-        let lastSource = this._bloomFBOs[0];
-
-        for (let i = 0; i < this._bloomFBOs.length; i++) {
-            const level = this._bloomFBOs[i];
-            const temp = this._bloomTempFBOs[i];
-            const texelSize = [1.0 / level.width, 1.0 / level.height];
-
-            gl.viewport(0, 0, level.width, level.height);
-            gl.uniform2f(blurProgram.uniforms.u_texelSize, texelSize[0], texelSize[1]);
-
-            // For levels > 0, first copy from previous level (downsample)
-            if (i > 0) {
-                // Use copy program or just blur from previous level
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, lastSource.texture);
-                gl.uniform1i(blurProgram.uniforms.u_texture, 0);
-                gl.uniform2f(blurProgram.uniforms.u_direction, 1.0, 0.0);
-                gl.bindFramebuffer(gl.FRAMEBUFFER, temp.framebuffer);
-                this._drawQuad();
-
-                gl.bindTexture(gl.TEXTURE_2D, temp.texture);
-                gl.uniform2f(blurProgram.uniforms.u_direction, 0.0, 1.0);
-                gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer);
-                this._drawQuad();
-            }
-
-            // Multiple blur iterations for smoother bloom (Pavel's approach)
-            for (let iter = 0; iter < BLUR_ITERATIONS; iter++) {
-                // Horizontal blur: level → temp
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, level.texture);
-                gl.uniform1i(blurProgram.uniforms.u_texture, 0);
-                gl.uniform2f(blurProgram.uniforms.u_direction, 1.0, 0.0);
-                gl.bindFramebuffer(gl.FRAMEBUFFER, temp.framebuffer);
-                this._drawQuad();
-
-                // Vertical blur: temp → level
-                gl.bindTexture(gl.TEXTURE_2D, temp.texture);
-                gl.uniform2f(blurProgram.uniforms.u_direction, 0.0, 1.0);
-                gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer);
-                this._drawQuad();
-            }
-
-            lastSource = level;
-        }
-
-        // Pass 3: Upsample and combine bloom levels (additive blending)
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.ONE, gl.ONE);
-
-        for (let i = this._bloomFBOs.length - 1; i > 0; i--) {
-            const target = this._bloomFBOs[i - 1];
-            const source = this._bloomFBOs[i];
-
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, source.texture);
-
-            gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
-            gl.viewport(0, 0, target.width, target.height);
-            this._drawQuad();
-        }
-
-        gl.disable(gl.BLEND);
-    }
-
-    /**
-     * Applies sunrays (volumetric light scattering) effect.
-     * Pavel's signature visual effect - creates glowing light beams from center.
-     * @private
-     */
-    _applySunrays() {
-        const gl = this.gl;
-        const { sunraysWeight } = this.config;
-
-        // Step 1: Create mask from dye (bright areas become light sources)
-        const maskProgram = this._programs.sunraysMask;
-        maskProgram.use();
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
-        gl.uniform1i(maskProgram.uniforms.u_texture, 0);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._sunraysTemp.framebuffer);
-        gl.viewport(0, 0, this._sunraysTemp.width, this._sunraysTemp.height);
-        this._drawQuad();
-
-        // Step 2: Apply volumetric light scattering
-        const sunraysProgram = this._programs.sunrays;
-        sunraysProgram.use();
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._sunraysTemp.texture);
-        gl.uniform1i(sunraysProgram.uniforms.u_texture, 0);
-        gl.uniform1f(sunraysProgram.uniforms.u_weight, sunraysWeight || 1.0);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._sunraysFBO.framebuffer);
-        gl.viewport(0, 0, this._sunraysFBO.width, this._sunraysFBO.height);
-        this._drawQuad();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     /**
@@ -1071,24 +866,9 @@ export class FluidSolver {
         // Note: Grid resolution stays fixed, only canvas viewport changes
         // If you want to scale grid with resolution, call setConfig with new gridSize
 
-        // Recreate bloom FBOs since they're based on canvas size
-        if (this._initialized && this.config.bloomEnabled) {
-            const gl = this.gl;
-            // Cleanup old bloom FBOs
-            if (this._bloomFBOs) {
-                for (const fbo of this._bloomFBOs) {
-                    gl.deleteTexture(fbo.texture);
-                    gl.deleteFramebuffer(fbo.framebuffer);
-                }
-            }
-            if (this._bloomTempFBOs) {
-                for (const fbo of this._bloomTempFBOs) {
-                    gl.deleteTexture(fbo.texture);
-                    gl.deleteFramebuffer(fbo.framebuffer);
-                }
-            }
-            // Recreate at new size
-            this._createBloomFBOs();
+        // Resize effect FBOs (bloom depends on canvas size)
+        if (this._initialized && this._effects) {
+            this._effects.resize(width, height);
         }
     }
 
@@ -1102,6 +882,11 @@ export class FluidSolver {
         const oldDyeSize = this.config.dyeSize;
 
         this.config = { ...this.config, ...newConfig };
+
+        // Update effects renderer config
+        if (this._effects) {
+            this._effects.setConfig(this.config);
+        }
 
         // Resize FBOs if grid size changed
         if (this._initialized) {
@@ -1208,30 +993,10 @@ export class FluidSolver {
         gl.deleteTexture(this._fbos.curl.texture);
         gl.deleteFramebuffer(this._fbos.curl.framebuffer);
 
-        // Destroy bloom FBOs
-        if (this._bloomFBOs) {
-            for (const fbo of this._bloomFBOs) {
-                gl.deleteTexture(fbo.texture);
-                gl.deleteFramebuffer(fbo.framebuffer);
-            }
-        }
-        // Destroy bloom temp FBOs (one per pyramid level)
-        if (this._bloomTempFBOs) {
-            for (const fbo of this._bloomTempFBOs) {
-                gl.deleteTexture(fbo.texture);
-                gl.deleteFramebuffer(fbo.framebuffer);
-            }
-        }
-        this._bloomTemp = null; // Was just a reference to _bloomTempFBOs[0]
-
-        // Destroy sunrays FBOs
-        if (this._sunraysFBO) {
-            gl.deleteTexture(this._sunraysFBO.texture);
-            gl.deleteFramebuffer(this._sunraysFBO.framebuffer);
-        }
-        if (this._sunraysTemp) {
-            gl.deleteTexture(this._sunraysTemp.texture);
-            gl.deleteFramebuffer(this._sunraysTemp.framebuffer);
+        // Destroy effects renderer (handles bloom and sunrays FBOs)
+        if (this._effects) {
+            this._effects.destroy();
+            this._effects = null;
         }
 
         // Destroy VAO

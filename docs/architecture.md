@@ -10,7 +10,9 @@ Questa simulazione implementa le **equazioni di Navier-Stokes** per fluidi incom
 fluid-sim/
 ├── js/
 │   ├── main.js          # Entry point, animation loop
-│   ├── fluid-solver.js  # Orchestratore della simulazione
+│   ├── fluid-solver.js  # Orchestratore della simulazione (~1000 righe)
+│   ├── simulation.js    # Documentazione fisica Navier-Stokes (~600 righe)
+│   ├── effects.js       # Effetti post-processing (bloom, sunrays) (~350 righe)
 │   ├── gl-utils.js      # Utility WebGL (context, texture, FBO)
 │   ├── shader-loader.js # Caricamento shader esterni
 │   ├── config.js        # Configurazione e costanti
@@ -27,9 +29,26 @@ fluid-sim/
 │   ├── curl.frag        # Calcolo vorticità
 │   ├── vorticity.frag   # Confinamento vorticità
 │   ├── display.frag     # Rendering finale
+│   ├── bloom-*.frag     # Shader bloom
+│   ├── sunrays*.frag    # Shader sunrays
 │   └── ...              # Altri shader effetti
 └── docs/
-    └── architecture.md  # Questa documentazione
+    ├── architecture.md  # Questa documentazione
+    ├── navier-stokes.md # Spiegazione equazioni fisiche
+    └── shaders.md       # Documentazione shader GLSL
+```
+
+### Dipendenze tra Moduli
+
+```
+main.js
+    ├── fluid-solver.js (orchestrazione)
+    │       ├── effects.js (bloom, sunrays)
+    │       ├── gl-utils.js (WebGL helpers)
+    │       ├── shader-loader.js (caricamento GLSL)
+    │       └── config.js (configurazione)
+    ├── input.js (mouse/touch)
+    └── ui.js (controlli)
 ```
 
 ## Flusso di Esecuzione
@@ -66,6 +85,32 @@ class FluidSolver {
     destroy()              // Rilascia risorse GPU
 }
 ```
+
+## EffectsRenderer - Effetti Post-Processing
+
+La classe `EffectsRenderer` gestisce bloom e sunrays:
+
+```javascript
+class EffectsRenderer {
+    initFBOs(width, height)        // Crea FBO per bloom e sunrays
+    applyBloom(dyeTexture)         // Applica effetto bloom
+    applySunrays(dyeTexture)       // Applica volumetric light scattering
+    resize(width, height)          // Ridimensiona FBO bloom
+    destroy()                      // Rilascia risorse
+}
+```
+
+### Bloom Pipeline
+
+1. **Prefilter** - Estrae pixel sopra soglia con soft knee
+2. **Downsample** - Crea piramide mip-map (dimezza ogni livello)
+3. **Blur** - Gaussian blur separabile (2 pass × N iterazioni)
+4. **Upsample** - Combina livelli con blending additivo
+
+### Sunrays Pipeline
+
+1. **Mask** - Converte luminosità in maschera
+2. **Radial Blur** - Sfocatura radiale verso il centro (god rays)
 
 ## Pipeline della Simulazione
 
