@@ -6,9 +6,11 @@ class InputManager {
     /**
      * Create an InputManager instance
      * @param {HTMLCanvasElement} canvas - The canvas element to attach listeners to
+     * @param {Object} solver - The fluid solver instance (to get live config)
      */
-    constructor(canvas) {
+    constructor(canvas, solver = null) {
         this.canvas = canvas;
+        this.solver = solver;
         this.forces = [];
         this.dyeColors = [];
         this.lastPosition = null;
@@ -51,47 +53,54 @@ class InputManager {
 
     /**
      * Handle pointer move event
+     * Pavel's approach: single splat with delta * SPLAT_FORCE
      * @param {number} x - Client X coordinate
      * @param {number} y - Client Y coordinate
      */
     onPointerMove(x, y) {
-        if (!this.isPressed) {
+        if (!this.isPressed || !this.lastPosition) {
             return;
         }
 
-        // Calculate normalized coordinates
+        // Calculate normalized coordinates (texcoord style, 0-1)
         const rect = this.canvas.getBoundingClientRect();
-        const normX = (x - rect.left) / rect.width;
-        const normY = 1.0 - (y - rect.top) / rect.height; // Flip Y for WebGL coords
+        const texcoordX = (x - rect.left) / rect.width;
+        const texcoordY = 1.0 - (y - rect.top) / rect.height; // Flip Y for WebGL
 
-        // Calculate delta from last position
-        const lastRect = this.canvas.getBoundingClientRect();
-        const lastNormX = (this.lastPosition.x - lastRect.left) / lastRect.width;
-        const lastNormY = 1.0 - (this.lastPosition.y - lastRect.top) / lastRect.height;
+        // Calculate delta in normalized coords
+        const prevTexcoordX = (this.lastPosition.x - rect.left) / rect.width;
+        const prevTexcoordY = 1.0 - (this.lastPosition.y - rect.top) / rect.height;
 
-        const dx = normX - lastNormX;
-        const dy = normY - lastNormY;
+        let deltaX = texcoordX - prevTexcoordX;
+        let deltaY = texcoordY - prevTexcoordY;
 
-        // Calculate speed
-        const speed = Math.sqrt(dx * dx + dy * dy);
-
-        // Only register movement if speed exceeds threshold
-        if (speed > 0.001) {
-            // Gentle forces like the CodePen
-            this.forces.push({
-                position: { x: normX, y: normY },
-                direction: { x: dx * 8, y: dy * 8 },
-                radius: 0.08,
-                strength: Math.min(speed * 50, 0.8)
-            });
-
-            // Push dye object
-            this.dyeColors.push({
-                position: { x: normX, y: normY },
-                color: this.currentDyeColor,
-                radius: 0.06
-            });
+        // Correct delta for aspect ratio (Pavel's correctDeltaX/Y)
+        const aspectRatio = this.canvas.width / this.canvas.height;
+        if (aspectRatio < 1) {
+            deltaX *= aspectRatio;
         }
+        if (aspectRatio > 1) {
+            deltaY /= aspectRatio;
+        }
+
+        // Single splat with force proportional to movement (Pavel's approach)
+        // Get LIVE config from solver (not stale reference)
+        const config = this.solver ? this.solver.config : {};
+        const SPLAT_FORCE = config.splatForce || 6000;
+        const SPLAT_RADIUS = config.splatRadius || 0.0025;  // Pavel: 0.25 / 100 = 0.0025
+
+        this.forces.push({
+            position: { x: texcoordX, y: texcoordY },
+            direction: { x: deltaX * SPLAT_FORCE, y: deltaY * SPLAT_FORCE },
+            radius: SPLAT_RADIUS
+        });
+
+        // Dye splat at same position - same radius as velocity
+        this.dyeColors.push({
+            position: { x: texcoordX, y: texcoordY },
+            color: this.currentDyeColor,
+            radius: SPLAT_RADIUS
+        });
 
         // Update last position
         this.lastPosition = { x, y };
@@ -178,17 +187,41 @@ class InputManager {
     }
 
     /**
-     * Generate a random dye color from the Aurora palette
-     * @returns {Array} RGB color array with values 0-1
+     * Convert HSV to RGB (Pavel's method)
+     * @param {number} h - Hue (0-1)
+     * @param {number} s - Saturation (0-1)
+     * @param {number} v - Value (0-1)
+     * @returns {Array} RGB array [r, g, b] with values 0-1
+     */
+    HSVtoRGB(h, s, v) {
+        let r, g, b;
+        const i = Math.floor(h * 6);
+        const f = h * 6 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+
+        switch (i % 6) {
+            case 0: r = v; g = t; b = p; break;
+            case 1: r = q; g = v; b = p; break;
+            case 2: r = p; g = v; b = t; break;
+            case 3: r = p; g = q; b = v; break;
+            case 4: r = t; g = p; b = v; break;
+            case 5: r = v; g = p; b = q; break;
+        }
+        return [r, g, b];
+    }
+
+    /**
+     * Generate a random dye color using HSV (Pavel's method)
+     * Random hue, full saturation and value
+     * @returns {Array} RGB color array - BRIGHT!
      */
     generateDyeColor() {
-        const colors = [
-            [0.0, 1.0, 0.53],   // #00FF87 mint
-            [0.0, 0.83, 1.0],   // #00D4FF cyan
-            [0.49, 0.23, 0.93], // #7C3AED violet
-            [1.0, 0.42, 0.61]   // #FF6B9D pink
-        ];
-        return colors[Math.floor(Math.random() * colors.length)];
+        // Random hue, full saturation, reduced value to avoid white blowout
+        const rgb = this.HSVtoRGB(Math.random(), 1.0, 1.0);
+        // Reduced intensity to prevent blinding white when colors mix
+        return rgb.map(c => c * 0.7);
     }
 
     /**

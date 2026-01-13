@@ -44,39 +44,173 @@
         <div class="spinner"></div>
     </div>
 
-    <div class="control-panel" role="group" aria-label="Simulation controls">
-        <div class="control-group">
-            <label for="intensity-slider">Color</label>
-            <input
-                type="range"
-                id="intensity-slider"
-                min="0.2"
-                max="2.0"
-                step="0.1"
-                value="1.0"
-                aria-describedby="intensity-value"
-            >
-            <span id="intensity-value" class="value-display">1.0</span>
-        </div>
-
-        <div class="control-group">
-            <label for="pause-toggle">Pause</label>
-            <div class="switch">
-                <input
-                    type="checkbox"
-                    id="pause-toggle"
-                    aria-label="Pause simulation"
-                >
-                <span class="switch-slider"></span>
-            </div>
-        </div>
-    </div>
+    <!-- Simple controls removed - all controls now in advanced panel -->
 
     <div class="static-fallback">
         <p>WebGL is not supported in your browser. Please try a modern browser.</p>
     </div>
 
     <div id="fps" class="fps-counter" hidden aria-live="polite">0 FPS</div>
+
+    <!-- Glassmorphism Control Panel -->
+    <button class="glass-fab" id="panel-toggle" aria-label="Toggle settings">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+    </button>
+
+    <div class="glass-panel" id="panel-content">
+        <div class="glass-panel-header">
+            <h3>Settings</h3>
+            <button class="glass-btn-icon" id="reset-btn" title="Reset">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Simulation Section -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+                Simulation
+            </div>
+
+            <div class="glass-control">
+                <label>Resolution</label>
+                <select id="param-gridSize" class="glass-select">
+                    <option value="32">32</option>
+                    <option value="64">64</option>
+                    <option value="128" selected>128</option>
+                    <option value="256">256</option>
+                </select>
+            </div>
+
+            <div class="glass-control">
+                <label>Vorticity</label>
+                <input type="range" id="param-curl" class="glass-slider" min="0" max="50" step="1" value="30">
+                <span class="glass-value" id="value-curl">30</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Pressure</label>
+                <input type="range" id="param-pressure" class="glass-slider" min="0" max="1" step="0.01" value="0.8">
+                <span class="glass-value" id="value-pressure">0.8</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Velocity Decay</label>
+                <input type="range" id="param-velocityDissipation" class="glass-slider" min="0" max="1" step="0.01" value="0.2">
+                <span class="glass-value" id="value-velocityDissipation">0.2</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Density Decay</label>
+                <input type="range" id="param-dyeDissipation" class="glass-slider" min="0" max="4" step="0.01" value="1">
+                <span class="glass-value" id="value-dyeDissipation">1</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Splat Size</label>
+                <input type="range" id="param-splatRadius" class="glass-slider" min="0.01" max="1" step="0.01" value="0.25">
+                <span class="glass-value" id="value-splatRadius">0.25</span>
+            </div>
+        </div>
+
+        <!-- Appearance Section -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 2a7 7 0 0 1 0 20 10 10 0 0 0 0-20"/>
+                </svg>
+                Appearance
+            </div>
+
+            <div class="glass-control toggle">
+                <label>Shading</label>
+                <label class="glass-toggle">
+                    <input type="checkbox" id="param-shadingEnabled" checked>
+                    <span class="glass-toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="glass-control toggle">
+                <label>Colorful</label>
+                <label class="glass-toggle">
+                    <input type="checkbox" id="param-colorfulEnabled" checked>
+                    <span class="glass-toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="glass-control toggle">
+                <label>Paused</label>
+                <label class="glass-toggle">
+                    <input type="checkbox" id="param-paused">
+                    <span class="glass-toggle-track"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Effects Section -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+                Effects
+            </div>
+
+            <div class="glass-control toggle">
+                <label>Bloom</label>
+                <label class="glass-toggle">
+                    <input type="checkbox" id="param-bloomEnabled" checked>
+                    <span class="glass-toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="glass-control">
+                <label>Bloom Intensity</label>
+                <input type="range" id="param-bloomIntensity" class="glass-slider" min="0.1" max="2" step="0.1" value="0.8">
+                <span class="glass-value" id="value-bloomIntensity">0.8</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Bloom Threshold</label>
+                <input type="range" id="param-bloomThreshold" class="glass-slider" min="0" max="1" step="0.1" value="0.6">
+                <span class="glass-value" id="value-bloomThreshold">0.6</span>
+            </div>
+
+            <div class="glass-control toggle">
+                <label>Sunrays</label>
+                <label class="glass-toggle">
+                    <input type="checkbox" id="param-sunraysEnabled" checked>
+                    <span class="glass-toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="glass-control">
+                <label>Sunrays Weight</label>
+                <input type="range" id="param-sunraysWeight" class="glass-slider" min="0.3" max="1" step="0.1" value="1">
+                <span class="glass-value" id="value-sunraysWeight">1</span>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="glass-actions">
+            <button class="glass-btn primary" id="random-splats-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 3v18M3 12h18"/>
+                </svg>
+                Random Splats
+            </button>
+            <button class="glass-btn" id="close-controls-btn">Close</button>
+        </div>
+    </div>
 
     <!-- Floating Navier-Stokes Equation -->
     <div class="floating-equation" aria-hidden="true">

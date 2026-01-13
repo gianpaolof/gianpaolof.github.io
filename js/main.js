@@ -3,15 +3,16 @@
  * Initializes all components and starts the animation loop
  */
 
-import { FluidSolver } from './fluid-solver.js';
+import { FluidSolver, DEFAULT_CONFIG } from './fluid-solver.js';
 import { InputManager } from './input.js';
-import { UIManager } from './ui.js';
+import { UIManager, AdvancedControlPanel } from './ui.js';
 import { detectQuality, QUALITY_PRESETS } from './gl-utils.js';
 
 // Global state
 let solver = null;
 let inputManager = null;
 let uiManager = null;
+let advancedPanel = null;
 let animationId = null;
 let lastTime = 0;
 let frameCount = 0;
@@ -45,16 +46,14 @@ async function init() {
         // Get quality preset
         const preset = QUALITY_PRESETS[quality.tier] || QUALITY_PRESETS.fallback;
 
-        // Create configuration
+        // Create configuration - use Pavel's values for best visuals
         const config = {
             ...preset,
-            velocityDissipation: 1.0,
-            dyeDissipation: 0.99,
-            forceRadius: 0.05,
-            forceStrength: 0.6,
-            noiseScale: 4.0,
-            noiseStrength: 0.01,
-            intensity: 1.0
+            // DON'T override these! Use defaults from fluid-solver.js
+            // velocityDissipation: 0.2 (default - lower = persists longer)
+            // dyeDissipation: 1.0 (default - no dissipation)
+            // splatRadius: 0.25 (default - visible splats)
+            // curl: 30 (default - vorticity strength)
         };
 
         console.log('Using config:', config);
@@ -66,11 +65,14 @@ async function init() {
         solver = new FluidSolver(canvas, config);
         await solver.init();
 
-        // Initialize input manager
-        inputManager = new InputManager(canvas);
+        // Initialize input manager with solver reference (for live config access)
+        inputManager = new InputManager(canvas, solver);
 
         // Initialize UI manager
         uiManager = new UIManager(solver, config);
+
+        // Initialize advanced control panel
+        advancedPanel = new AdvancedControlPanel(solver, DEFAULT_CONFIG);
 
         // Set up context loss handling
         setupContextLossHandling(canvas);
@@ -258,8 +260,11 @@ window.fluidSim = {
     get solver() { return solver; },
     get inputManager() { return inputManager; },
     get uiManager() { return uiManager; },
+    get advancedPanel() { return advancedPanel; },
     showFPS: (show) => uiManager?.showFPS(show),
     clear: () => solver?.clear(),
     pause: () => solver?.pause(),
-    resume: () => solver?.resume()
+    resume: () => solver?.resume(),
+    setParam: (name, value) => advancedPanel?.setParam(name, value),
+    getParams: () => advancedPanel?.getParams()
 };
