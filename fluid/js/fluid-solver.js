@@ -44,24 +44,47 @@ void main() {
 /**
  * Semi-Lagrangian advection shader.
  * Traces particles backward in time and samples the source field.
+ * Uses manual bilinear filtering for higher quality (like Pavel).
+ *
+ * IMPORTANT: u_texelSize is for velocity lookup/backtrace (1/gridSize)
+ *            u_sourceTexelSize is for sampling the source texture (could be 1/dyeSize)
  */
 const ADVECT_FRAG = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_velocity;
 uniform sampler2D u_source;
-uniform vec2 u_texelSize;
+uniform vec2 u_texelSize;        // For velocity lookup and backtrace step (1/gridSize)
+uniform vec2 u_sourceTexelSize;  // For sampling source texture (may differ for dye)
 uniform float u_dt;
 uniform float u_dissipation;
 
 in vec2 v_texCoord;
 out vec4 fragColor;
 
+// Manual bilinear filtering for better quality (CRITICAL for smooth advection!)
+vec4 bilerp(sampler2D sam, vec2 uv, vec2 tsize) {
+    vec2 st = uv / tsize - 0.5;
+    vec2 iuv = floor(st);
+    vec2 fuv = fract(st);
+    vec4 a = texture(sam, (iuv + vec2(0.5, 0.5)) * tsize);
+    vec4 b = texture(sam, (iuv + vec2(1.5, 0.5)) * tsize);
+    vec4 c = texture(sam, (iuv + vec2(0.5, 1.5)) * tsize);
+    vec4 d = texture(sam, (iuv + vec2(1.5, 1.5)) * tsize);
+    return mix(mix(a, b, fuv.x), mix(c, d, fuv.x), fuv.y);
+}
+
 void main() {
     vec2 velocity = texture(u_velocity, v_texCoord).xy;
-    vec2 prevPos = v_texCoord - u_dt * velocity * u_texelSize;
-    vec4 result = texture(u_source, prevPos);
-    fragColor = result * u_dissipation;
+    // Backtrace uses velocity-scale texelSize
+    vec2 coord = v_texCoord - u_dt * velocity * u_texelSize;
+
+    // USE BILINEAR FILTERING with SOURCE texture's texelSize!
+    vec4 result = bilerp(u_source, coord, u_sourceTexelSize);
+
+    // Pavel's dissipation formula: divide instead of multiply
+    float decay = 1.0 + u_dissipation * u_dt;
+    fragColor = result / decay;
 }
 `;
 
@@ -131,11 +154,6 @@ void main() {
             snoise(vec2(noiseCoord.x + 100.0, noiseCoord.y + u_time * 0.1))
         ) * u_noiseStrength;
         velocity += noiseForce;
-    }
-
-    float speed = length(velocity);
-    if (speed > 10.0) {
-        velocity = velocity / speed * 10.0;
     }
 
     fragColor = vec4(velocity, 0.0, 1.0);
@@ -249,92 +267,334 @@ void main() {
 `;
 
 /**
- * Vorticity confinement shader.
- * Amplifies vortices to counteract numerical dissipation.
+ * Curl shader - computes vorticity (separate pass like Pavel).
+ */
+const CURL_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_velocity;
+uniform vec2 u_texelSize;
+
+in vec2 v_texCoord;
+out float fragColor;
+
+void main() {
+    float L = texture(u_velocity, v_texCoord - vec2(u_texelSize.x, 0.0)).y;
+    float R = texture(u_velocity, v_texCoord + vec2(u_texelSize.x, 0.0)).y;
+    float T = texture(u_velocity, v_texCoord + vec2(0.0, u_texelSize.y)).x;
+    float B = texture(u_velocity, v_texCoord - vec2(0.0, u_texelSize.y)).x;
+    float vorticity = R - L - T + B;
+    fragColor = 0.5 * vorticity;
+}
+`;
+
+/**
+ * Vorticity confinement shader (uses precomputed curl).
+ * Adds rotational force to amplify existing swirls.
+ * EXACTLY like Pavel's implementation.
  */
 const VORTICITY_FRAG = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_velocity;
+uniform sampler2D u_curl;
 uniform vec2 u_texelSize;
-uniform float u_curl;
+uniform float u_curlStrength;
 uniform float u_dt;
 
 in vec2 v_texCoord;
 out vec2 fragColor;
 
-float curl(vec2 uv) {
-    float vL = texture(u_velocity, uv - vec2(u_texelSize.x, 0.0)).y;
-    float vR = texture(u_velocity, uv + vec2(u_texelSize.x, 0.0)).y;
-    float vB = texture(u_velocity, uv - vec2(0.0, u_texelSize.y)).x;
-    float vT = texture(u_velocity, uv + vec2(0.0, u_texelSize.y)).x;
-    return (vR - vL) - (vT - vB);
-}
-
 void main() {
-    vec2 uv = v_texCoord;
-    vec2 velocity = texture(u_velocity, uv).xy;
+    float L = texture(u_curl, v_texCoord - vec2(u_texelSize.x, 0.0)).x;
+    float R = texture(u_curl, v_texCoord + vec2(u_texelSize.x, 0.0)).x;
+    float T = texture(u_curl, v_texCoord + vec2(0.0, u_texelSize.y)).x;
+    float B = texture(u_curl, v_texCoord - vec2(0.0, u_texelSize.y)).x;
+    float C = texture(u_curl, v_texCoord).x;
 
-    float curlC = curl(uv);
-    float curlL = curl(uv - vec2(u_texelSize.x, 0.0));
-    float curlR = curl(uv + vec2(u_texelSize.x, 0.0));
-    float curlB = curl(uv - vec2(0.0, u_texelSize.y));
-    float curlT = curl(uv + vec2(0.0, u_texelSize.y));
+    vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+    force /= length(force) + 0.0001;
+    force *= u_curlStrength * C;
+    force.y *= -1.0;
 
-    vec2 curlGrad = vec2(abs(curlR) - abs(curlL), abs(curlT) - abs(curlB));
-    float len = length(curlGrad);
-    if (len > 0.0001) curlGrad /= len;
-
-    vec2 force = vec2(curlGrad.y, -curlGrad.x) * curlC * u_curl;
+    vec2 velocity = texture(u_velocity, v_texCoord).xy;
     velocity += force * u_dt;
-
+    velocity = min(max(velocity, -1000.0), 1000.0);
     fragColor = velocity;
 }
 `;
 
 /**
- * CodePen style render shader (FWeinb).
- * Maps velocity components directly to RGB channels.
- * Black background, colored fluid, no white.
+ * Display shader - renders dye field with shading, bloom, sunrays, and dithering.
+ * Pavel-style rendering with 3D lighting effect.
  */
-const RENDER_FRAG = `#version 300 es
+const DISPLAY_FRAG = `#version 300 es
 precision highp float;
 
-uniform sampler2D u_velocity;
-uniform sampler2D u_dye;
-uniform vec2 u_resolution;
-uniform float u_time;
+uniform sampler2D u_texture;
+uniform sampler2D u_bloom;
+uniform sampler2D u_sunrays;
+uniform vec2 u_texelSize;
+uniform float u_bloomIntensity;
+uniform bool u_bloomEnabled;
+uniform bool u_shadingEnabled;
+uniform bool u_sunraysEnabled;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+// Gamma correction like Pavel (sRGB)
+vec3 linearToGamma(vec3 color) {
+    color = max(color, vec3(0.0));
+    return max(1.055 * pow(color, vec3(0.416666667)) - 0.055, vec3(0.0));
+}
+
+void main() {
+    vec3 c = texture(u_texture, v_texCoord).rgb;
+
+    // SHADING - creates 3D "oily" effect from color gradients (like Pavel)
+    // STRONGER contrast than before!
+    if (u_shadingEnabled) {
+        vec3 lc = texture(u_texture, v_texCoord - vec2(u_texelSize.x, 0.0)).rgb;
+        vec3 rc = texture(u_texture, v_texCoord + vec2(u_texelSize.x, 0.0)).rgb;
+        vec3 tc = texture(u_texture, v_texCoord + vec2(0.0, u_texelSize.y)).rgb;
+        vec3 bc = texture(u_texture, v_texCoord - vec2(0.0, u_texelSize.y)).rgb;
+
+        float dx = length(rc) - length(lc);
+        float dy = length(tc) - length(bc);
+
+        // Pavel's exact normal and lighting formula
+        vec3 n = normalize(vec3(dx, dy, length(u_texelSize)));
+        vec3 l = vec3(0.0, 0.0, 1.0);
+        float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
+        c *= diffuse;
+    }
+
+    // SUNRAYS first (Pavel's order: shading -> sunrays -> bloom)
+    float sunrays = 1.0;
+    if (u_sunraysEnabled) {
+        sunrays = texture(u_sunrays, v_texCoord).r;
+        c *= sunrays;  // Pavel's exact formula: pure multiply
+    }
+
+    // BLOOM - additive glow (also modulated by sunrays like Pavel)
+    if (u_bloomEnabled) {
+        vec3 bloom = texture(u_bloom, v_texCoord).rgb * u_bloomIntensity;
+        if (u_sunraysEnabled) {
+            bloom *= sunrays;  // Pavel also multiplies bloom by sunrays
+        }
+        c += bloom;
+    }
+
+    // Gamma correction for final output (do BEFORE dithering)
+    c = linearToGamma(c);
+
+    // DITHERING - better algorithm (triangular distribution)
+    // Reduces banding artifacts in gradients
+    vec2 uv = v_texCoord * vec2(1920.0, 1080.0);
+    float noise = fract(52.9829189 * fract(dot(uv, vec2(0.06711056, 0.00583715))));
+    c += (noise - 0.5) / 255.0;
+
+    // Output with alpha based on brightness
+    float a = max(c.r, max(c.g, c.b));
+    fragColor = vec4(c, a);
+}
+`;
+
+/**
+ * Bloom prefilter - extracts bright areas with soft knee.
+ */
+const BLOOM_PREFILTER_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
+uniform vec3 u_curve;  // threshold, knee, knee*2
+uniform float u_threshold;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+void main() {
+    vec3 color = texture(u_texture, v_texCoord).rgb;
+
+    // Soft knee curve
+    float brightness = max(max(color.r, color.g), color.b);
+    float soft = brightness - u_curve.x + u_curve.y;
+    soft = clamp(soft, 0.0, u_curve.z);
+    soft = soft * soft / (4.0 * u_curve.y + 0.00001);
+
+    float contribution = max(soft, brightness - u_threshold);
+    contribution /= max(brightness, 0.00001);
+
+    fragColor = vec4(color * contribution, 1.0);
+}
+`;
+
+/**
+ * Gaussian blur shader for bloom.
+ */
+const BLUR_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
+uniform vec2 u_texelSize;
+uniform vec2 u_direction;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+void main() {
+    vec4 color = vec4(0.0);
+    vec2 off1 = vec2(1.3846153846) * u_direction * u_texelSize;
+    vec2 off2 = vec2(3.2307692308) * u_direction * u_texelSize;
+
+    color += texture(u_texture, v_texCoord) * 0.2270270270;
+    color += texture(u_texture, v_texCoord + off1) * 0.3162162162;
+    color += texture(u_texture, v_texCoord - off1) * 0.3162162162;
+    color += texture(u_texture, v_texCoord + off2) * 0.0702702703;
+    color += texture(u_texture, v_texCoord - off2) * 0.0702702703;
+
+    fragColor = color;
+}
+`;
+
+/**
+ * Bloom final composite - combines bloom mips.
+ */
+const BLOOM_FINAL_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
 uniform float u_intensity;
 
 in vec2 v_texCoord;
 out vec4 fragColor;
 
 void main() {
-    // Sample velocity
-    vec2 velocity = texture(u_velocity, v_texCoord).xy;
-
-    // Speed threshold - below this, show black
-    float speed = length(velocity);
-    if (speed < 0.001) {
-        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
-        return;
-    }
-
-    // CodePen style: velocity components → RGB
-    // Lower multipliers to avoid saturation/white
-    float r = abs(velocity.x) * u_intensity * 1.2;
-    float b = abs(velocity.y) * u_intensity * 1.2;
-    float g = (r + b) * 0.25;
-
-    // Cap maximum brightness to 0.85 to avoid white
-    float maxBrightness = 0.85;
-    vec3 color = vec3(r, g, b);
-    float brightness = max(max(color.r, color.g), color.b);
-    if (brightness > maxBrightness) {
-        color *= maxBrightness / brightness;
-    }
-
+    vec3 color = texture(u_texture, v_texCoord).rgb * u_intensity;
     fragColor = vec4(color, 1.0);
+}
+`;
+
+/**
+ * Copy shader - simple texture copy.
+ */
+const COPY_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+void main() {
+    fragColor = texture(u_texture, v_texCoord);
+}
+`;
+
+/**
+ * Sunrays mask shader - converts dye brightness to mask.
+ * Pavel's technique: where there's bright fluid, we create light sources.
+ */
+const SUNRAYS_MASK_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+void main() {
+    vec4 c = texture(u_texture, v_texCoord);
+    float brightness = max(c.r, max(c.g, c.b));
+    // Higher brightness = more light contribution
+    // We want bright fluid to emit light rays
+    fragColor = vec4(vec3(brightness), 1.0);
+}
+`;
+
+/**
+ * Sunrays shader - volumetric light scattering from screen center.
+ * Based on GPU Gems 3 - Volumetric Light Scattering.
+ */
+const SUNRAYS_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
+uniform float u_weight;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+#define ITERATIONS 16
+
+void main() {
+    float Density = 0.3;
+    float Decay = 0.95;
+    float Exposure = 0.7;
+
+    vec2 coord = v_texCoord;
+    vec2 dir = v_texCoord - 0.5; // Direction from center
+    dir *= 1.0 / float(ITERATIONS) * Density;
+
+    float illuminationDecay = 1.0;
+    float color = texture(u_texture, v_texCoord).r;
+
+    for (int i = 0; i < ITERATIONS; i++) {
+        coord -= dir;
+        float sample_ = texture(u_texture, coord).r;
+        sample_ *= illuminationDecay * u_weight;
+        color += sample_;
+        illuminationDecay *= Decay;
+    }
+
+    fragColor = vec4(vec3(color * Exposure), 1.0);
+}
+`;
+
+/**
+ * Clear shader - scales previous pressure by coefficient (Pavel's approach).
+ * This helps Jacobi solver converge faster by starting closer to solution.
+ */
+const CLEAR_FRAG = `#version 300 es
+precision mediump float;
+
+uniform sampler2D u_texture;
+uniform float u_value;
+
+in vec2 v_texCoord;
+out float fragColor;
+
+void main() {
+    // Sample previous pressure and scale it (Pavel uses 0.8)
+    // This keeps 80% of previous pressure for faster convergence
+    fragColor = u_value * texture(u_texture, v_texCoord).r;
+}
+`;
+
+/**
+ * Splat shader - injects color at a position.
+ */
+const SPLAT_FRAG = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_target;
+uniform vec2 u_point;
+uniform vec3 u_color;
+uniform float u_radius;
+uniform float u_aspectRatio;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+void main() {
+    vec2 p = v_texCoord - u_point;
+    p.x *= u_aspectRatio;
+
+    float splat = exp(-dot(p, p) / u_radius);
+    vec3 base = texture(u_target, v_texCoord).rgb;
+
+    fragColor = vec4(base + u_color * splat, 1.0);
 }
 `;
 
@@ -362,17 +622,36 @@ const COLORS = {
  * @type {Object}
  */
 const DEFAULT_CONFIG = {
-    gridSize: 64,            // Same as CodePen - low res = smooth
-    dyeSize: 128,
+    gridSize: 128,              // SIM_RESOLUTION like Pavel
+    dyeSize: 1024,              // DYE_RESOLUTION like Pavel (high res!)
     pressureIterations: 20,
-    velocityDissipation: 0.97,  // More dissipation = calmer fluid
-    dyeDissipation: 0.95,
-    forceRadius: 0.1,
-    forceStrength: 0.5,      // Much gentler forces
+    pressure: 0.8,              // Like Pavel - pressure coefficient
+    velocityDissipation: 0.2,   // Like Pavel - low = persists longer
+    dyeDissipation: 1.0,        // Like Pavel - no dissipation (1.0 = none)
+    curl: 30,                   // Like Pavel - vorticity strength
+    // Splat settings - CRITICAL for visuals (Pavel: 0.25/100 = 0.0025)
+    splatRadius: 0.0025,        // Like Pavel
+    splatForce: 6000,           // Like Pavel
+    // Legacy force settings (for noise)
+    forceRadius: 0.0025,
+    forceStrength: 6000,
     noiseScale: 4.0,
     noiseStrength: 0.0,
-    curl: 0.0,               // Disable vorticity confinement
-    intensity: 1.0
+    intensity: 1.0,
+    // Bloom settings - Like Pavel
+    bloomEnabled: true,
+    bloomIntensity: 0.8,
+    bloomThreshold: 0.6,
+    bloomSoftKnee: 0.7,
+    bloomIterations: 8,
+    // Sunrays - KEY visual effect from Pavel!
+    sunraysEnabled: true,
+    sunraysResolution: 196,
+    sunraysWeight: 1.0,
+    // Shading
+    shadingEnabled: true,       // 3D effect like Pavel
+    // Color settings
+    colorUpdateSpeed: 10
 };
 
 // =============================================================================
@@ -474,36 +753,113 @@ export class FluidSolver {
         this._initialized = true;
         this._lastTime = performance.now();
 
-        // Add initial random forces to create immediate visual interest
-        this._addInitialSplats();
+        // Add initial splats for visual interest (like Pavel's multipleSplats)
+        this._addInitialSplats(parseInt(Math.random() * 20) + 5);
     }
 
     /**
-     * Adds initial motion for visual interest on load.
+     * Adds random splats with color (Pavel's multipleSplats).
+     * Public method for UI button.
+     * @param {number} amount - Number of splats to add
+     */
+    addRandomSplats(amount = 5) {
+        this._addInitialSplats(amount);
+    }
+
+    /**
+     * Adds initial splats with color (Pavel's multipleSplats).
+     * @param {number} amount - Number of splats to add
      * @private
      */
-    _addInitialSplats() {
-        const { gridSize } = this.config;
-        const texelSize = [1.0 / gridSize, 1.0 / gridSize];
+    _addInitialSplats(amount = 5) {
         const aspectRatio = this.canvas.width / this.canvas.height;
+        // Use config splat radius, slightly larger for random splats
+        const splatRadius = (this.config.splatRadius || 0.0025) * 2;
 
-        // Stronger initial splats to be visible immediately
-        const splats = [
-            { pos: [0.25, 0.4], dir: [1.5, 0.8], radius: 0.2 },
-            { pos: [0.75, 0.6], dir: [-1.2, 1.0], radius: 0.2 },
-            { pos: [0.5, 0.25], dir: [0.8, -1.2], radius: 0.18 },
-            { pos: [0.4, 0.75], dir: [-1.0, -0.6], radius: 0.18 },
-            { pos: [0.6, 0.5], dir: [0.5, 1.5], radius: 0.15 },
-        ];
+        for (let i = 0; i < amount; i++) {
+            // Random position across entire screen
+            const x = Math.random();
+            const y = Math.random();
 
-        for (const s of splats) {
+            // Random velocity direction (Pavel-style)
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 200 + Math.random() * 200; // Moderate speed
+            const dx = Math.cos(angle) * speed;
+            const dy = Math.sin(angle) * speed;
+
+            // Generate color (Pavel-style: bright but not blinding)
+            const color = this._generateColor();
+
+            // Apply force (velocity splat)
             this._applyForce({
-                position: s.pos,
-                direction: s.dir,
-                radius: s.radius,
-                strength: 1.0
-            }, texelSize, aspectRatio);
+                position: [x, y],
+                direction: [dx, dy]
+            }, null, aspectRatio);
+
+            // Apply colored dye with reasonable radius
+            this._applySplat([x, y], color, splatRadius, aspectRatio);
         }
+    }
+
+    /**
+     * Generates a random vibrant color using HSV (Pavel's method).
+     * @private
+     * @returns {number[]} RGB color array - BRIGHT and saturated!
+     */
+    _generateColor() {
+        // Pavel uses random hue, full saturation, full value
+        const hue = Math.random();
+        const sat = 1.0;
+        const val = 1.0;
+
+        // HSV to RGB conversion
+        const i = Math.floor(hue * 6);
+        const f = hue * 6 - i;
+        const p = val * (1 - sat);
+        const q = val * (1 - f * sat);
+        const t = val * (1 - (1 - f) * sat);
+
+        let r, g, b;
+        switch (i % 6) {
+            case 0: r = val; g = t; b = p; break;
+            case 1: r = q; g = val; b = p; break;
+            case 2: r = p; g = val; b = t; break;
+            case 3: r = p; g = q; b = val; break;
+            case 4: r = t; g = p; b = val; break;
+            case 5: r = val; g = p; b = q; break;
+        }
+
+        // BRIGHT colors! Pavel uses 0.15 * 10 = 1.5 intensity
+        // We go higher for more vibrant effect
+        return [r * 1.2, g * 1.2, b * 1.2];
+    }
+
+    /**
+     * Applies a color splat to the dye field.
+     * @private
+     */
+    _applySplat(pos, color, radius, aspectRatio) {
+        const gl = this.gl;
+        const program = this._programs.splat;
+
+        program.use();
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
+        gl.uniform1i(program.uniforms.u_target, 0);
+
+        gl.uniform2f(program.uniforms.u_point, pos[0], pos[1]);
+        gl.uniform3f(program.uniforms.u_color, color[0], color[1], color[2]);
+
+        // Pass radius directly - aspect correction is done in shader via p.x
+        gl.uniform1f(program.uniforms.u_radius, radius);
+        gl.uniform1f(program.uniforms.u_aspectRatio, aspectRatio);
+
+        this._fbos.dye.bindWrite();
+        this._drawQuad();
+        this._fbos.dye.swap();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     /**
@@ -513,14 +869,30 @@ export class FluidSolver {
     _createPrograms() {
         const gl = this.gl;
 
+        // Simulation programs
         this._programs.advect = createProgram(gl, QUAD_VERT, ADVECT_FRAG);
         this._programs.forces = createProgram(gl, QUAD_VERT, FORCES_FRAG);
         this._programs.dye = createProgram(gl, QUAD_VERT, DYE_FRAG);
         this._programs.divergence = createProgram(gl, QUAD_VERT, DIVERGENCE_FRAG);
         this._programs.pressure = createProgram(gl, QUAD_VERT, PRESSURE_FRAG);
         this._programs.gradient = createProgram(gl, QUAD_VERT, GRADIENT_FRAG);
+        this._programs.curl = createProgram(gl, QUAD_VERT, CURL_FRAG);
         this._programs.vorticity = createProgram(gl, QUAD_VERT, VORTICITY_FRAG);
-        this._programs.render = createProgram(gl, QUAD_VERT, RENDER_FRAG);
+
+        // Rendering programs
+        this._programs.display = createProgram(gl, QUAD_VERT, DISPLAY_FRAG);
+        this._programs.copy = createProgram(gl, QUAD_VERT, COPY_FRAG);
+        this._programs.splat = createProgram(gl, QUAD_VERT, SPLAT_FRAG);
+        this._programs.clear = createProgram(gl, QUAD_VERT, CLEAR_FRAG);
+
+        // Bloom programs
+        this._programs.bloomPrefilter = createProgram(gl, QUAD_VERT, BLOOM_PREFILTER_FRAG);
+        this._programs.blur = createProgram(gl, QUAD_VERT, BLUR_FRAG);
+        this._programs.bloomFinal = createProgram(gl, QUAD_VERT, BLOOM_FINAL_FRAG);
+
+        // Sunrays programs - Pavel's volumetric light effect
+        this._programs.sunraysMask = createProgram(gl, QUAD_VERT, SUNRAYS_MASK_FRAG);
+        this._programs.sunrays = createProgram(gl, QUAD_VERT, SUNRAYS_FRAG);
     }
 
     /**
@@ -529,7 +901,7 @@ export class FluidSolver {
      */
     _createFBOs() {
         const gl = this.gl;
-        const { gridSize, dyeSize } = this.config;
+        const { gridSize, dyeSize, bloomIterations } = this.config;
         const { VELOCITY_FORMAT, PRESSURE_FORMAT, DYE_FORMAT } = this.formats;
 
         // Velocity field (double-buffered)
@@ -553,10 +925,106 @@ export class FluidSolver {
             height: gridSize
         };
 
+        // Curl field (single buffer) - for vorticity confinement
+        const curlTexture = createTexture(
+            gl, gridSize, gridSize, PRESSURE_FORMAT
+        );
+        this._fbos.curl = {
+            texture: curlTexture,
+            framebuffer: createFramebuffer(gl, curlTexture),
+            width: gridSize,
+            height: gridSize
+        };
+
         // Dye field (double-buffered, higher resolution)
         this._fbos.dye = new DoubleFBO(
             gl, dyeSize, dyeSize, DYE_FORMAT
         );
+
+        // Bloom FBOs - create pyramid of decreasing resolution
+        this._createBloomFBOs();
+
+        // Sunrays FBOs - Pavel's volumetric light effect
+        this._createSunraysFBOs();
+    }
+
+    /**
+     * Creates bloom framebuffer pyramid.
+     * @private
+     */
+    _createBloomFBOs() {
+        const gl = this.gl;
+        const { bloomIterations } = this.config;
+        const { DYE_FORMAT } = this.formats;
+
+        // Start with half resolution of canvas
+        let width = Math.floor(this.canvas.width / 2);
+        let height = Math.floor(this.canvas.height / 2);
+
+        // Minimum size
+        const minSize = 32;
+
+        this._bloomFBOs = [];
+        this._bloomTempFBOs = []; // Temp FBOs for ping-pong blur at each level
+
+        for (let i = 0; i < bloomIterations; i++) {
+            if (width < minSize || height < minSize) break;
+
+            const texture = createTexture(gl, width, height, DYE_FORMAT);
+            this._bloomFBOs.push({
+                texture,
+                framebuffer: createFramebuffer(gl, texture),
+                width,
+                height
+            });
+
+            // Create matching temp FBO for this level
+            const tempTex = createTexture(gl, width, height, DYE_FORMAT);
+            this._bloomTempFBOs.push({
+                texture: tempTex,
+                framebuffer: createFramebuffer(gl, tempTex),
+                width,
+                height
+            });
+
+            width = Math.floor(width / 2);
+            height = Math.floor(height / 2);
+        }
+
+        // Keep legacy _bloomTemp for compatibility (points to first temp)
+        if (this._bloomTempFBOs.length > 0) {
+            this._bloomTemp = this._bloomTempFBOs[0];
+        }
+    }
+
+    /**
+     * Creates sunrays framebuffers for volumetric light effect.
+     * @private
+     */
+    _createSunraysFBOs() {
+        const gl = this.gl;
+        const { sunraysResolution } = this.config;
+        const { DYE_FORMAT } = this.formats;
+
+        // Sunrays FBO at lower resolution for performance
+        const res = sunraysResolution || 196;
+
+        const sunraysTexture = createTexture(gl, res, res, DYE_FORMAT);
+        this._sunraysFBO = {
+            texture: sunraysTexture,
+            framebuffer: createFramebuffer(gl, sunraysTexture),
+            width: res,
+            height: res
+        };
+
+        // Temp FBO for sunrays blur
+        const sunraysTempTexture = createTexture(gl, res, res, DYE_FORMAT);
+        this._sunraysTemp = {
+            texture: sunraysTempTexture,
+            framebuffer: createFramebuffer(gl, sunraysTempTexture),
+            width: res,
+            height: res
+        };
     }
 
     /**
@@ -591,6 +1059,35 @@ export class FluidSolver {
     }
 
     /**
+     * Clears pressure field by scaling previous values (Pavel's approach).
+     * Uses config.pressure coefficient (default 0.8) to keep 80% of previous pressure.
+     * This helps Jacobi solver converge faster.
+     * @private
+     */
+    _clearPressure() {
+        const gl = this.gl;
+        const program = this._programs.clear;
+
+        program.use();
+
+        // Bind previous pressure texture
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this._fbos.pressure.texture);
+        gl.uniform1i(program.uniforms.u_texture, 0);
+
+        // Scale factor (Pavel uses 0.8 - keeps 80% of previous pressure)
+        gl.uniform1f(program.uniforms.u_value, this.config.pressure);
+
+        // Render to write buffer
+        this._fbos.pressure.bindWrite();
+        gl.viewport(0, 0, this._fbos.pressure.width, this._fbos.pressure.height);
+        this._drawQuad();
+        this._fbos.pressure.swap();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    /**
      * Draws a fullscreen triangle using VAO.
      * @private
      */
@@ -602,6 +1099,7 @@ export class FluidSolver {
 
     /**
      * Performs one simulation step.
+     * Order matches Pavel's implementation.
      *
      * @param {number} dt - Delta time in seconds
      * @param {Array} [forces=[]] - Array of force objects
@@ -613,8 +1111,8 @@ export class FluidSolver {
 
         const gl = this.gl;
 
-        // Cap dt to prevent instability (30fps minimum)
-        dt = Math.min(dt, 0.033);
+        // Cap dt to prevent instability
+        dt = Math.min(dt, 0.016666);
 
         // Accumulate simulation time
         this._time += dt;
@@ -632,7 +1130,55 @@ export class FluidSolver {
         this._pendingDye = [];
 
         // =================================================================
-        // PASS 1: ADVECT VELOCITY (self-advection)
+        // PASS 1: APPLY INPUT FORCES (splats)
+        // =================================================================
+        for (const force of allForces) {
+            this._applyForce(force, texelSize, aspectRatio);
+        }
+
+        // =================================================================
+        // PASS 2: APPLY INPUT DYE (colors)
+        // =================================================================
+        for (const dye of allDye) {
+            this._applyDye(dye, aspectRatio);
+        }
+
+        // =================================================================
+        // PASS 3: COMPUTE CURL (vorticity scalar field)
+        // =================================================================
+        if (this.config.curl > 0) {
+            this._computeCurl(texelSize);
+        }
+
+        // =================================================================
+        // PASS 4: APPLY VORTICITY CONFINEMENT
+        // =================================================================
+        if (this.config.curl > 0) {
+            this._applyVorticity(dt, texelSize);
+        }
+
+        // =================================================================
+        // PASS 5: COMPUTE DIVERGENCE
+        // =================================================================
+        this._computeDivergence(texelSize);
+
+        // =================================================================
+        // PASS 6: SCALE PRESSURE (Pavel's approach for faster convergence)
+        // =================================================================
+        this._clearPressure();
+
+        // =================================================================
+        // PASS 7: PRESSURE SOLVE (Jacobi iteration)
+        // =================================================================
+        this._solvePressure();
+
+        // =================================================================
+        // PASS 8: GRADIENT SUBTRACTION (projection)
+        // =================================================================
+        this._subtractGradient();
+
+        // =================================================================
+        // PASS 9: ADVECT VELOCITY (self-advection) - AFTER projection!
         // =================================================================
         this._advect(
             this._fbos.velocity,
@@ -643,59 +1189,29 @@ export class FluidSolver {
         );
 
         // =================================================================
-        // PASS 2: APPLY FORCES
-        // =================================================================
-        for (const force of allForces) {
-            this._applyForce(force, texelSize, aspectRatio);
-        }
-
-        // =================================================================
-        // PASS 3: APPLY DYE
-        // =================================================================
-        for (const dye of allDye) {
-            this._applyDye(dye, aspectRatio);
-        }
-
-        // =================================================================
-        // PASS 4: COMPUTE DIVERGENCE
-        // =================================================================
-        this._computeDivergence(texelSize);
-
-        // =================================================================
-        // PASS 5: PRESSURE SOLVE (Jacobi iteration)
-        // =================================================================
-        this._solvePressure();
-
-        // =================================================================
-        // PASS 6: GRADIENT SUBTRACTION (projection)
-        // =================================================================
-        this._subtractGradient();
-
-        // =================================================================
-        // PASS 7: VORTICITY CONFINEMENT
-        // =================================================================
-        if (this.config.curl > 0) {
-            this._applyVorticity(dt, texelSize);
-        }
-
-        // =================================================================
-        // PASS 8: ADVECT DYE
+        // PASS 10: ADVECT DYE
         // =================================================================
         const dyeSize = this.config.dyeSize;
         const dyeTexelSize = [1.0 / dyeSize, 1.0 / dyeSize];
         this._advectDye(dt, dyeTexelSize);
-
-        // Note: Continuous noise injection removed - it creates ugly patterns
-        // The fluid should evolve naturally from user interaction
     }
 
     /**
      * Advects a field using the velocity field.
      * @private
+     * @param {DoubleFBO} targetFBO - Target FBO to write to
+     * @param {DoubleFBO} sourceFBO - Source FBO to sample from
+     * @param {number} dt - Delta time
+     * @param {number} dissipation - Dissipation rate
+     * @param {number[]} velocityTexelSize - Texel size for velocity (1/gridSize)
+     * @param {number[]} [sourceTexelSize] - Texel size for source texture (defaults to velocityTexelSize)
      */
-    _advect(targetFBO, sourceFBO, dt, dissipation, texelSize) {
+    _advect(targetFBO, sourceFBO, dt, dissipation, velocityTexelSize, sourceTexelSize = null) {
         const gl = this.gl;
         const program = this._programs.advect;
+
+        // If no source texel size provided, use velocity texel size
+        const srcTexelSize = sourceTexelSize || velocityTexelSize;
 
         program.use();
 
@@ -709,8 +1225,11 @@ export class FluidSolver {
         gl.bindTexture(gl.TEXTURE_2D, sourceFBO.texture);
         gl.uniform1i(program.uniforms.u_source, 1);
 
-        // Set uniforms
-        gl.uniform2f(program.uniforms.u_texelSize, texelSize[0], texelSize[1]);
+        // Set uniforms - CRITICAL: use correct texelSize for each purpose!
+        // u_texelSize: for velocity backtrace step (1/gridSize)
+        // u_sourceTexelSize: for bilerp sampling source texture
+        gl.uniform2f(program.uniforms.u_texelSize, velocityTexelSize[0], velocityTexelSize[1]);
+        gl.uniform2f(program.uniforms.u_sourceTexelSize, srcTexelSize[0], srcTexelSize[1]);
         gl.uniform1f(program.uniforms.u_dt, dt);
         gl.uniform1f(program.uniforms.u_dissipation, dissipation);
 
@@ -723,44 +1242,34 @@ export class FluidSolver {
     }
 
     /**
-     * Applies a single force to the velocity field.
+     * Applies a single force to the velocity field using splat shader (like Pavel).
      * @private
      */
     _applyForce(force, texelSize, aspectRatio) {
         const gl = this.gl;
-        const program = this._programs.forces;
+        const program = this._programs.splat;
 
         program.use();
 
-        // Bind velocity texture
+        // Bind velocity texture as target
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 0);
+        gl.uniform1i(program.uniforms.u_target, 0);
 
-        // Set uniforms
-        gl.uniform2f(program.uniforms.u_texelSize, texelSize[0], texelSize[1]);
+        // Position
+        gl.uniform2f(program.uniforms.u_point, force.position[0], force.position[1]);
+
+        // Pass velocity delta as "color" (like Pavel does)
+        const dx = force.direction[0];
+        const dy = force.direction[1];
+        gl.uniform3f(program.uniforms.u_color, dx, dy, 0.0);
+
+        // Pass radius directly - aspect correction is done in shader via p.x
+        const radius = force.radius || this.config.forceRadius;
+        gl.uniform1f(program.uniforms.u_radius, radius);
         gl.uniform1f(program.uniforms.u_aspectRatio, aspectRatio);
 
-        gl.uniform2f(
-            program.uniforms.u_forcePosition,
-            force.position[0],
-            force.position[1]
-        );
-        gl.uniform2f(
-            program.uniforms.u_forceDirection,
-            force.direction[0] * (force.strength || this.config.forceStrength),
-            force.direction[1] * (force.strength || this.config.forceStrength)
-        );
-        gl.uniform1f(
-            program.uniforms.u_forceRadius,
-            force.radius || this.config.forceRadius
-        );
-
-        gl.uniform1f(program.uniforms.u_time, this._time);
-        gl.uniform1f(program.uniforms.u_noiseScale, this.config.noiseScale);
-        gl.uniform1f(program.uniforms.u_noiseStrength, this.config.noiseStrength);
-
-        // Render
+        // Render to velocity
         this._fbos.velocity.bindWrite();
         this._drawQuad();
         this._fbos.velocity.swap();
@@ -769,44 +1278,17 @@ export class FluidSolver {
     }
 
     /**
-     * Applies dye at a position.
+     * Applies dye at a position using splat shader.
      * @private
      */
     _applyDye(dye, aspectRatio) {
-        const gl = this.gl;
-        const program = this._programs.dye;
-
-        program.use();
-
-        // Bind dye texture
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
-        gl.uniform1i(program.uniforms.u_dye, 0);
-
-        // Set uniforms
-        gl.uniform1f(program.uniforms.u_aspectRatio, aspectRatio);
-        gl.uniform2f(
-            program.uniforms.u_dyePosition,
-            dye.position[0],
-            dye.position[1]
+        // Use the splat method for consistent dye application
+        this._applySplat(
+            [dye.position[0], dye.position[1]],
+            dye.color,
+            dye.radius || this.config.splatRadius,
+            aspectRatio
         );
-        gl.uniform3f(
-            program.uniforms.u_dyeColor,
-            dye.color[0],
-            dye.color[1],
-            dye.color[2]
-        );
-        gl.uniform1f(
-            program.uniforms.u_dyeRadius,
-            dye.radius || this.config.forceRadius
-        );
-
-        // Render
-        this._fbos.dye.bindWrite();
-        this._drawQuad();
-        this._fbos.dye.swap();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     /**
@@ -897,7 +1379,30 @@ export class FluidSolver {
     }
 
     /**
-     * Applies vorticity confinement to amplify vortices.
+     * Computes curl (vorticity) of the velocity field.
+     * @private
+     */
+    _computeCurl(texelSize) {
+        const gl = this.gl;
+        const program = this._programs.curl;
+
+        program.use();
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
+        gl.uniform1i(program.uniforms.u_velocity, 0);
+
+        gl.uniform2f(program.uniforms.u_texelSize, texelSize[0], texelSize[1]);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._fbos.curl.framebuffer);
+        gl.viewport(0, 0, this._fbos.curl.width, this._fbos.curl.height);
+        this._drawQuad();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    /**
+     * Applies vorticity confinement using precomputed curl.
      * @private
      */
     _applyVorticity(dt, texelSize) {
@@ -911,9 +1416,14 @@ export class FluidSolver {
         gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
         gl.uniform1i(program.uniforms.u_velocity, 0);
 
+        // Bind curl texture
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this._fbos.curl.texture);
+        gl.uniform1i(program.uniforms.u_curl, 1);
+
         // Set uniforms
         gl.uniform2f(program.uniforms.u_texelSize, texelSize[0], texelSize[1]);
-        gl.uniform1f(program.uniforms.u_curl, this.config.curl);
+        gl.uniform1f(program.uniforms.u_curlStrength, this.config.curl);
         gl.uniform1f(program.uniforms.u_dt, dt);
 
         // Render
@@ -926,44 +1436,28 @@ export class FluidSolver {
 
     /**
      * Advects dye field using velocity.
+     * Uses velocity-scale texelSize for backtrace, dye-scale for sampling.
      * @private
      */
-    _advectDye(dt, texelSize) {
-        const gl = this.gl;
-        const program = this._programs.advect;
+    _advectDye(dt, dyeTexelSize) {
+        // Velocity texelSize for backtrace calculation
+        const { gridSize } = this.config;
+        const velocityTexelSize = [1.0 / gridSize, 1.0 / gridSize];
 
-        program.use();
-
-        // Bind velocity texture (for advection lookup)
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 0);
-
-        // Bind dye texture as source
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
-        gl.uniform1i(program.uniforms.u_source, 1);
-
-        // Set uniforms - scale velocity sampling for different resolution
-        const velocityToGridScale = this.config.gridSize / this.config.dyeSize;
-        gl.uniform2f(
-            program.uniforms.u_texelSize,
-            texelSize[0] * velocityToGridScale,
-            texelSize[1] * velocityToGridScale
+        // Use the generalized _advect with both texel sizes
+        this._advect(
+            this._fbos.dye,
+            this._fbos.dye,
+            dt,
+            this.config.dyeDissipation,
+            velocityTexelSize,  // For backtrace step
+            dyeTexelSize        // For bilerp sampling (1/dyeSize)
         );
-        gl.uniform1f(program.uniforms.u_dt, dt);
-        gl.uniform1f(program.uniforms.u_dissipation, this.config.dyeDissipation);
-
-        // Render
-        this._fbos.dye.bindWrite();
-        this._drawQuad();
-        this._fbos.dye.swap();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     /**
      * Renders the fluid visualization to the canvas.
+     * Uses dye field with bloom and sunrays effects.
      */
     render() {
         if (!this._initialized) {
@@ -971,41 +1465,195 @@ export class FluidSolver {
         }
 
         const gl = this.gl;
-        const program = this._programs.render;
+        const { bloomEnabled, bloomIntensity, sunraysEnabled, sunraysWeight } = this.config;
 
-        // Render to canvas
+        // Apply bloom if enabled
+        if (bloomEnabled && this._bloomFBOs && this._bloomFBOs.length > 0) {
+            this._applyBloom();
+        }
+
+        // Apply sunrays if enabled - Pavel's key visual effect!
+        if (sunraysEnabled && this._sunraysFBO) {
+            this._applySunrays();
+        }
+
+        // Final display pass
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 
+        const program = this._programs.display;
         program.use();
 
-        // Bind velocity texture
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 0);
-
         // Bind dye texture
-        gl.activeTexture(gl.TEXTURE1);
+        gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
-        gl.uniform1i(program.uniforms.u_dye, 1);
+        gl.uniform1i(program.uniforms.u_texture, 0);
 
-        // Set uniforms - use velocity grid resolution, not canvas resolution
-        // This is critical for correct vorticity computation
+        // Bind bloom texture if enabled
+        if (bloomEnabled && this._bloomFBOs && this._bloomFBOs.length > 0) {
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, this._bloomFBOs[0].texture);
+            gl.uniform1i(program.uniforms.u_bloom, 1);
+        }
+
+        // Bind sunrays texture if enabled
+        if (sunraysEnabled && this._sunraysFBO) {
+            gl.activeTexture(gl.TEXTURE2);
+            gl.bindTexture(gl.TEXTURE_2D, this._sunraysFBO.texture);
+            gl.uniform1i(program.uniforms.u_sunrays, 2);
+        }
+
+        // Debug: log uniform values periodically
+        if (Math.random() < 0.001) {
+            console.log('Render uniforms:', { bloomIntensity, bloomEnabled, sunraysEnabled, sunraysWeight });
+        }
+
+        gl.uniform1f(program.uniforms.u_bloomIntensity, bloomIntensity);
+        gl.uniform1i(program.uniforms.u_bloomEnabled, bloomEnabled ? 1 : 0);
+        gl.uniform1i(program.uniforms.u_shadingEnabled, this.config.shadingEnabled ? 1 : 0);
+        gl.uniform1i(program.uniforms.u_sunraysEnabled, sunraysEnabled ? 1 : 0);
         gl.uniform2f(
-            program.uniforms.u_resolution,
-            this.config.gridSize,
-            this.config.gridSize
+            program.uniforms.u_texelSize,
+            1.0 / this.config.dyeSize,
+            1.0 / this.config.dyeSize
         );
-        gl.uniform1f(program.uniforms.u_time, this._time);
-        gl.uniform1f(program.uniforms.u_intensity, this.config.intensity);
-
-        // Color palette
-        gl.uniform3fv(program.uniforms.u_colorBg, COLORS.bg);
-        gl.uniform3fv(program.uniforms.u_colorPrimary, COLORS.primary);
-        gl.uniform3fv(program.uniforms.u_colorSecondary, COLORS.secondary);
-        gl.uniform3fv(program.uniforms.u_colorAccent, COLORS.accent);
 
         this._drawQuad();
+    }
+
+    /**
+     * Applies multi-pass bloom effect.
+     * @private
+     */
+    _applyBloom() {
+        const gl = this.gl;
+        const { bloomThreshold, bloomSoftKnee, bloomIntensity } = this.config;
+
+        // Number of blur iterations per level (Pavel does multiple for smoother bloom)
+        const BLUR_ITERATIONS = 2;
+
+        // Calculate soft knee curve
+        const knee = bloomThreshold * bloomSoftKnee;
+        const curve = [bloomThreshold - knee, knee * 2, 0.25 / (knee + 0.00001)];
+
+        // Pass 1: Prefilter - extract bright areas into first bloom FBO
+        const prefilterProgram = this._programs.bloomPrefilter;
+        prefilterProgram.use();
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
+        gl.uniform1i(prefilterProgram.uniforms.u_texture, 0);
+        gl.uniform3f(prefilterProgram.uniforms.u_curve, curve[0], curve[1], curve[2]);
+        gl.uniform1f(prefilterProgram.uniforms.u_threshold, bloomThreshold);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._bloomFBOs[0].framebuffer);
+        gl.viewport(0, 0, this._bloomFBOs[0].width, this._bloomFBOs[0].height);
+        this._drawQuad();
+
+        // Pass 2: Downsample and blur at each pyramid level
+        const blurProgram = this._programs.blur;
+        blurProgram.use();
+
+        let lastSource = this._bloomFBOs[0];
+
+        for (let i = 0; i < this._bloomFBOs.length; i++) {
+            const level = this._bloomFBOs[i];
+            const temp = this._bloomTempFBOs[i];
+            const texelSize = [1.0 / level.width, 1.0 / level.height];
+
+            gl.viewport(0, 0, level.width, level.height);
+            gl.uniform2f(blurProgram.uniforms.u_texelSize, texelSize[0], texelSize[1]);
+
+            // For levels > 0, first copy from previous level (downsample)
+            if (i > 0) {
+                // Use copy program or just blur from previous level
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, lastSource.texture);
+                gl.uniform1i(blurProgram.uniforms.u_texture, 0);
+                gl.uniform2f(blurProgram.uniforms.u_direction, 1.0, 0.0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, temp.framebuffer);
+                this._drawQuad();
+
+                gl.bindTexture(gl.TEXTURE_2D, temp.texture);
+                gl.uniform2f(blurProgram.uniforms.u_direction, 0.0, 1.0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer);
+                this._drawQuad();
+            }
+
+            // Multiple blur iterations for smoother bloom (Pavel's approach)
+            for (let iter = 0; iter < BLUR_ITERATIONS; iter++) {
+                // Horizontal blur: level → temp
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, level.texture);
+                gl.uniform1i(blurProgram.uniforms.u_texture, 0);
+                gl.uniform2f(blurProgram.uniforms.u_direction, 1.0, 0.0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, temp.framebuffer);
+                this._drawQuad();
+
+                // Vertical blur: temp → level
+                gl.bindTexture(gl.TEXTURE_2D, temp.texture);
+                gl.uniform2f(blurProgram.uniforms.u_direction, 0.0, 1.0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, level.framebuffer);
+                this._drawQuad();
+            }
+
+            lastSource = level;
+        }
+
+        // Pass 3: Upsample and combine bloom levels (additive blending)
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
+
+        for (let i = this._bloomFBOs.length - 1; i > 0; i--) {
+            const target = this._bloomFBOs[i - 1];
+            const source = this._bloomFBOs[i];
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, source.texture);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+            gl.viewport(0, 0, target.width, target.height);
+            this._drawQuad();
+        }
+
+        gl.disable(gl.BLEND);
+    }
+
+    /**
+     * Applies sunrays (volumetric light scattering) effect.
+     * Pavel's signature visual effect - creates glowing light beams from center.
+     * @private
+     */
+    _applySunrays() {
+        const gl = this.gl;
+        const { sunraysWeight } = this.config;
+
+        // Step 1: Create mask from dye (bright areas become light sources)
+        const maskProgram = this._programs.sunraysMask;
+        maskProgram.use();
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this._fbos.dye.texture);
+        gl.uniform1i(maskProgram.uniforms.u_texture, 0);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._sunraysTemp.framebuffer);
+        gl.viewport(0, 0, this._sunraysTemp.width, this._sunraysTemp.height);
+        this._drawQuad();
+
+        // Step 2: Apply volumetric light scattering
+        const sunraysProgram = this._programs.sunrays;
+        sunraysProgram.use();
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this._sunraysTemp.texture);
+        gl.uniform1i(sunraysProgram.uniforms.u_texture, 0);
+        gl.uniform1f(sunraysProgram.uniforms.u_weight, sunraysWeight || 1.0);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._sunraysFBO.framebuffer);
+        gl.viewport(0, 0, this._sunraysFBO.width, this._sunraysFBO.height);
+        this._drawQuad();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     /**
@@ -1054,6 +1702,26 @@ export class FluidSolver {
 
         // Note: Grid resolution stays fixed, only canvas viewport changes
         // If you want to scale grid with resolution, call setConfig with new gridSize
+
+        // Recreate bloom FBOs since they're based on canvas size
+        if (this._initialized && this.config.bloomEnabled) {
+            const gl = this.gl;
+            // Cleanup old bloom FBOs
+            if (this._bloomFBOs) {
+                for (const fbo of this._bloomFBOs) {
+                    gl.deleteTexture(fbo.texture);
+                    gl.deleteFramebuffer(fbo.framebuffer);
+                }
+            }
+            if (this._bloomTempFBOs) {
+                for (const fbo of this._bloomTempFBOs) {
+                    gl.deleteTexture(fbo.texture);
+                    gl.deleteFramebuffer(fbo.framebuffer);
+                }
+            }
+            // Recreate at new size
+            this._createBloomFBOs();
+        }
     }
 
     /**
@@ -1064,6 +1732,13 @@ export class FluidSolver {
     setConfig(newConfig) {
         const oldGridSize = this.config.gridSize;
         const oldDyeSize = this.config.dyeSize;
+
+        // Debug: log config changes
+        for (const [key, value] of Object.entries(newConfig)) {
+            if (this.config[key] !== value) {
+                console.log(`Config: ${key} = ${value}`);
+            }
+        }
 
         this.config = { ...this.config, ...newConfig };
 
@@ -1129,13 +1804,13 @@ export class FluidSolver {
      *
      * @param {number[]} position - [x, y] in normalized [0,1] coords
      * @param {number[]} color - [r, g, b] color values (0-1)
-     * @param {number} [radius] - Dye radius (default from config)
+     * @param {number} [radius] - Dye radius (default from config.splatRadius)
      */
     addDye(position, color, radius) {
         this._pendingDye.push({
             position,
             color,
-            radius: radius || this.config.forceRadius
+            radius: radius || this.config.splatRadius
         });
     }
 
@@ -1168,6 +1843,35 @@ export class FluidSolver {
 
         gl.deleteTexture(this._fbos.divergence.texture);
         gl.deleteFramebuffer(this._fbos.divergence.framebuffer);
+
+        gl.deleteTexture(this._fbos.curl.texture);
+        gl.deleteFramebuffer(this._fbos.curl.framebuffer);
+
+        // Destroy bloom FBOs
+        if (this._bloomFBOs) {
+            for (const fbo of this._bloomFBOs) {
+                gl.deleteTexture(fbo.texture);
+                gl.deleteFramebuffer(fbo.framebuffer);
+            }
+        }
+        // Destroy bloom temp FBOs (one per pyramid level)
+        if (this._bloomTempFBOs) {
+            for (const fbo of this._bloomTempFBOs) {
+                gl.deleteTexture(fbo.texture);
+                gl.deleteFramebuffer(fbo.framebuffer);
+            }
+        }
+        this._bloomTemp = null; // Was just a reference to _bloomTempFBOs[0]
+
+        // Destroy sunrays FBOs
+        if (this._sunraysFBO) {
+            gl.deleteTexture(this._sunraysFBO.texture);
+            gl.deleteFramebuffer(this._sunraysFBO.framebuffer);
+        }
+        if (this._sunraysTemp) {
+            gl.deleteTexture(this._sunraysTemp.texture);
+            gl.deleteFramebuffer(this._sunraysTemp.framebuffer);
+        }
 
         // Destroy VAO
         if (this._vao) {

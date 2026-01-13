@@ -44,39 +44,156 @@
         <div class="spinner"></div>
     </div>
 
-    <div class="control-panel" role="group" aria-label="Simulation controls">
-        <div class="control-group">
-            <label for="intensity-slider">Color</label>
-            <input
-                type="range"
-                id="intensity-slider"
-                min="0.2"
-                max="2.0"
-                step="0.1"
-                value="1.0"
-                aria-describedby="intensity-value"
-            >
-            <span id="intensity-value" class="value-display">1.0</span>
-        </div>
-
-        <div class="control-group">
-            <label for="pause-toggle">Pause</label>
-            <div class="switch">
-                <input
-                    type="checkbox"
-                    id="pause-toggle"
-                    aria-label="Pause simulation"
-                >
-                <span class="switch-slider"></span>
-            </div>
-        </div>
-    </div>
+    <!-- Simple controls removed - all controls now in advanced panel -->
 
     <div class="static-fallback">
         <p>WebGL is not supported in your browser. Please try a modern browser.</p>
     </div>
 
     <div id="fps" class="fps-counter" hidden aria-live="polite">0 FPS</div>
+
+    <!-- Advanced Control Panel (Pavel-style) -->
+    <div class="advanced-panel" id="advanced-controls">
+        <button class="panel-toggle" id="panel-toggle" aria-label="Toggle settings panel">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+            </svg>
+        </button>
+        <div class="panel-content" id="panel-content">
+            <div class="panel-header">
+                <span>Settings</span>
+                <button class="reset-btn" id="reset-btn" title="Reset to defaults">Reset</button>
+            </div>
+
+            <!-- Simulation Section -->
+            <div class="param-section">
+                <div class="section-title">Simulation</div>
+
+                <div class="param-row">
+                    <label for="param-gridSize">sim resolution</label>
+                    <select id="param-gridSize">
+                        <option value="32">32</option>
+                        <option value="64">64</option>
+                        <option value="128" selected>128</option>
+                        <option value="256">256</option>
+                    </select>
+                </div>
+
+                <div class="param-row">
+                    <label for="param-dyeDissipation">density diffusion</label>
+                    <input type="range" id="param-dyeDissipation" min="0" max="4" step="0.01" value="1">
+                    <span class="param-value" id="value-dyeDissipation">1</span>
+                </div>
+
+                <div class="param-row">
+                    <label for="param-velocityDissipation">velocity diffusion</label>
+                    <input type="range" id="param-velocityDissipation" min="0" max="1" step="0.01" value="0.2">
+                    <span class="param-value" id="value-velocityDissipation">0.2</span>
+                </div>
+
+                <div class="param-row">
+                    <label for="param-pressure">pressure</label>
+                    <input type="range" id="param-pressure" min="0" max="1" step="0.01" value="0.8">
+                    <span class="param-value" id="value-pressure">0.8</span>
+                </div>
+
+                <div class="param-row">
+                    <label for="param-curl">vorticity</label>
+                    <input type="range" id="param-curl" min="0" max="50" step="1" value="30">
+                    <span class="param-value" id="value-curl">30</span>
+                </div>
+
+                <div class="param-row">
+                    <label for="param-splatRadius">splat radius</label>
+                    <input type="range" id="param-splatRadius" min="0.01" max="1" step="0.01" value="0.25">
+                    <span class="param-value" id="value-splatRadius">0.25</span>
+                </div>
+            </div>
+
+            <!-- Toggles Section -->
+            <div class="param-section">
+                <div class="param-row toggle-row">
+                    <label for="param-shadingEnabled">shading</label>
+                    <input type="checkbox" id="param-shadingEnabled" checked>
+                </div>
+
+                <div class="param-row toggle-row">
+                    <label for="param-colorfulEnabled">colorful</label>
+                    <input type="checkbox" id="param-colorfulEnabled" checked>
+                </div>
+
+                <div class="param-row toggle-row">
+                    <label for="param-paused">paused</label>
+                    <input type="checkbox" id="param-paused">
+                </div>
+            </div>
+
+            <!-- Random Splats Button -->
+            <div class="param-section">
+                <button class="action-btn" id="random-splats-btn">Random splats</button>
+            </div>
+
+            <!-- Bloom Section -->
+            <div class="param-section collapsible">
+                <div class="section-title clickable" data-target="bloom-content">
+                    <span class="collapse-arrow">▼</span> Bloom
+                </div>
+                <div class="section-content" id="bloom-content">
+                    <div class="param-row toggle-row">
+                        <label for="param-bloomEnabled">enabled</label>
+                        <input type="checkbox" id="param-bloomEnabled" checked>
+                    </div>
+
+                    <div class="param-row">
+                        <label for="param-bloomIntensity">intensity</label>
+                        <input type="range" id="param-bloomIntensity" min="0.1" max="2" step="0.1" value="0.8">
+                        <span class="param-value" id="value-bloomIntensity">0.8</span>
+                    </div>
+
+                    <div class="param-row">
+                        <label for="param-bloomThreshold">threshold</label>
+                        <input type="range" id="param-bloomThreshold" min="0" max="1" step="0.1" value="0.6">
+                        <span class="param-value" id="value-bloomThreshold">0.6</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sunrays Section -->
+            <div class="param-section collapsible">
+                <div class="section-title clickable" data-target="sunrays-content">
+                    <span class="collapse-arrow">▼</span> Sunrays
+                </div>
+                <div class="section-content" id="sunrays-content">
+                    <div class="param-row toggle-row">
+                        <label for="param-sunraysEnabled">enabled</label>
+                        <input type="checkbox" id="param-sunraysEnabled" checked>
+                    </div>
+
+                    <div class="param-row">
+                        <label for="param-sunraysWeight">weight</label>
+                        <input type="range" id="param-sunraysWeight" min="0.3" max="1" step="0.1" value="1">
+                        <span class="param-value" id="value-sunraysWeight">1</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Close button -->
+            <div class="param-section">
+                <button class="action-btn close-btn" id="close-controls-btn">Close Controls</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Navier-Stokes Equation -->
+    <div class="floating-equation" aria-hidden="true">
+        <span class="eq-part">∂<span class="eq-var">u</span>/∂t</span>
+        <span class="eq-op">+</span>
+        <span class="eq-part">(<span class="eq-var">u</span>·∇)<span class="eq-var">u</span></span>
+        <span class="eq-op">=</span>
+        <span class="eq-part">−∇p</span>
+        <span class="eq-op">+</span>
+        <span class="eq-part">ν∇²<span class="eq-var">u</span></span>
+    </div>
 
     <script type="module" src="js/main.js"></script>
 </body>
