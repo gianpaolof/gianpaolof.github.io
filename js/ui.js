@@ -79,7 +79,7 @@ class AdvancedControlPanel {
     constructor(solver, defaultConfig) {
         this.solver = solver;
         this.defaultConfig = { ...defaultConfig };
-        this.isOpen = true;
+        this.isOpen = false;
         this.colorfulEnabled = true;
         this.colorUpdateTimer = 0;
 
