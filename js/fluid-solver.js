@@ -21,657 +21,8 @@ import {
     QUALITY_PRESETS
 } from './gl-utils.js';
 
-// =============================================================================
-// SHADER SOURCES
-// =============================================================================
-
-/**
- * Fullscreen quad vertex shader (attribute-less).
- * Uses gl_VertexID to generate vertices.
- */
-const QUAD_VERT = `#version 300 es
-
-out vec2 v_texCoord;
-
-void main() {
-    float x = float((gl_VertexID & 1) << 2) - 1.0;
-    float y = float((gl_VertexID & 2) << 1) - 1.0;
-    v_texCoord = vec2(x, y) * 0.5 + 0.5;
-    gl_Position = vec4(x, y, 0.0, 1.0);
-}
-`;
-
-/**
- * Semi-Lagrangian advection shader.
- * Traces particles backward in time and samples the source field.
- * Uses manual bilinear filtering for higher quality (like Pavel).
- *
- * IMPORTANT: u_texelSize is for velocity lookup/backtrace (1/gridSize)
- *            u_sourceTexelSize is for sampling the source texture (could be 1/dyeSize)
- */
-const ADVECT_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_velocity;
-uniform sampler2D u_source;
-uniform vec2 u_texelSize;        // For velocity lookup and backtrace step (1/gridSize)
-uniform vec2 u_sourceTexelSize;  // For sampling source texture (may differ for dye)
-uniform float u_dt;
-uniform float u_dissipation;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-// Manual bilinear filtering for better quality (CRITICAL for smooth advection!)
-vec4 bilerp(sampler2D sam, vec2 uv, vec2 tsize) {
-    vec2 st = uv / tsize - 0.5;
-    vec2 iuv = floor(st);
-    vec2 fuv = fract(st);
-    vec4 a = texture(sam, (iuv + vec2(0.5, 0.5)) * tsize);
-    vec4 b = texture(sam, (iuv + vec2(1.5, 0.5)) * tsize);
-    vec4 c = texture(sam, (iuv + vec2(0.5, 1.5)) * tsize);
-    vec4 d = texture(sam, (iuv + vec2(1.5, 1.5)) * tsize);
-    return mix(mix(a, b, fuv.x), mix(c, d, fuv.x), fuv.y);
-}
-
-void main() {
-    vec2 velocity = texture(u_velocity, v_texCoord).xy;
-    // Backtrace uses velocity-scale texelSize
-    vec2 coord = v_texCoord - u_dt * velocity * u_texelSize;
-
-    // USE BILINEAR FILTERING with SOURCE texture's texelSize!
-    vec4 result = bilerp(u_source, coord, u_sourceTexelSize);
-
-    // Pavel's dissipation formula: divide instead of multiply
-    float decay = 1.0 + u_dissipation * u_dt;
-    fragColor = result / decay;
-}
-`;
-
-/**
- * External force injection shader.
- * Applies Gaussian splat forces from user input.
- */
-const FORCES_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_velocity;
-uniform vec2 u_texelSize;
-uniform float u_aspectRatio;
-
-uniform vec2 u_forcePosition;
-uniform vec2 u_forceDirection;
-uniform float u_forceRadius;
-
-uniform float u_time;
-uniform float u_noiseScale;
-uniform float u_noiseStrength;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-vec3 permute(vec3 x) { return mod289(((x * 34.0) + 1.0) * x); }
-
-float snoise(vec2 v) {
-    const vec4 C = vec4(0.211324865405187, 0.366025403784439,
-                        -0.577350269189626, 0.024390243902439);
-    vec2 i = floor(v + dot(v, C.yy));
-    vec2 x0 = v - i + dot(i, C.xx);
-    vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-    vec4 x12 = x0.xyxy + C.xxzz;
-    x12.xy -= i1;
-    i = mod289(i);
-    vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
-    vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
-    m = m * m * m * m;
-    vec3 x = 2.0 * fract(p * C.www) - 1.0;
-    vec3 h = abs(x) - 0.5;
-    vec3 ox = floor(x + 0.5);
-    vec3 a0 = x - ox;
-    m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
-    vec3 g;
-    g.x = a0.x * x0.x + h.x * x0.y;
-    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-    return 130.0 * dot(m, g);
-}
-
-void main() {
-    vec2 velocity = texture(u_velocity, v_texCoord).xy;
-
-    vec2 delta = v_texCoord - u_forcePosition;
-    delta.x *= u_aspectRatio;
-    float dist = length(delta);
-
-    float influence = exp(-dist * dist / (2.0 * u_forceRadius * u_forceRadius));
-    velocity += u_forceDirection * influence;
-
-    if (u_noiseStrength > 0.0) {
-        vec2 noiseCoord = v_texCoord * u_noiseScale;
-        vec2 noiseForce = vec2(
-            snoise(vec2(noiseCoord.x, noiseCoord.y + u_time * 0.1)),
-            snoise(vec2(noiseCoord.x + 100.0, noiseCoord.y + u_time * 0.1))
-        ) * u_noiseStrength;
-        velocity += noiseForce;
-    }
-
-    fragColor = vec4(velocity, 0.0, 1.0);
-}
-`;
-
-/**
- * Dye injection shader.
- * Adds color splat at specified position.
- */
-const DYE_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_dye;
-uniform vec2 u_dyePosition;
-uniform vec3 u_dyeColor;
-uniform float u_dyeRadius;
-uniform float u_aspectRatio;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-    vec3 dye = texture(u_dye, v_texCoord).rgb;
-
-    vec2 delta = v_texCoord - u_dyePosition;
-    delta.x *= u_aspectRatio;
-    float dist = length(delta);
-
-    float influence = exp(-dist * dist / (2.0 * u_dyeRadius * u_dyeRadius));
-    dye += u_dyeColor * influence;
-
-    fragColor = vec4(clamp(dye, 0.0, 1.0), 1.0);
-}
-`;
-
-/**
- * Divergence calculation shader.
- * Computes divergence using central differences.
- */
-const DIVERGENCE_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_velocity;
-uniform vec2 u_texelSize;
-
-in vec2 v_texCoord;
-out float fragColor;
-
-void main() {
-    // Sample neighbor velocities
-    float L = textureOffset(u_velocity, v_texCoord, ivec2(-1, 0)).x;
-    float R = textureOffset(u_velocity, v_texCoord, ivec2( 1, 0)).x;
-    float B = textureOffset(u_velocity, v_texCoord, ivec2( 0,-1)).y;
-    float T = textureOffset(u_velocity, v_texCoord, ivec2( 0, 1)).y;
-
-    // Sample center velocity for boundary conditions
-    vec2 C = texture(u_velocity, v_texCoord).xy;
-
-    // Free-slip boundary conditions (Pavel's approach)
-    // At boundaries, flip velocity to prevent penetration
-    vec2 coordL = v_texCoord - vec2(u_texelSize.x, 0.0);
-    vec2 coordR = v_texCoord + vec2(u_texelSize.x, 0.0);
-    vec2 coordT = v_texCoord + vec2(0.0, u_texelSize.y);
-    vec2 coordB = v_texCoord - vec2(0.0, u_texelSize.y);
-
-    if (coordL.x < 0.0) { L = -C.x; }
-    if (coordR.x > 1.0) { R = -C.x; }
-    if (coordT.y > 1.0) { T = -C.y; }
-    if (coordB.y < 0.0) { B = -C.y; }
-
-    float divergence = 0.5 * (R - L + T - B);
-    fragColor = divergence;
-}
-`;
-
-/**
- * Jacobi pressure solver shader.
- * Iteratively solves Poisson equation.
- */
-const PRESSURE_FRAG = `#version 300 es
-precision mediump float;
-
-uniform sampler2D u_pressure;
-uniform sampler2D u_divergence;
-
-in vec2 v_texCoord;
-out float fragColor;
-
-void main() {
-    float pL = textureOffset(u_pressure, v_texCoord, ivec2(-1, 0)).x;
-    float pR = textureOffset(u_pressure, v_texCoord, ivec2( 1, 0)).x;
-    float pB = textureOffset(u_pressure, v_texCoord, ivec2( 0,-1)).x;
-    float pT = textureOffset(u_pressure, v_texCoord, ivec2( 0, 1)).x;
-
-    float div = texture(u_divergence, v_texCoord).x;
-    float pressure = (pL + pR + pB + pT - div) * 0.25;
-
-    fragColor = pressure;
-}
-`;
-
-/**
- * Gradient subtraction shader.
- * Projects velocity to divergence-free field.
- */
-const GRADIENT_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_pressure;
-uniform sampler2D u_velocity;
-
-in vec2 v_texCoord;
-out vec2 fragColor;
-
-void main() {
-    float L = textureOffset(u_pressure, v_texCoord, ivec2(-1, 0)).x;
-    float R = textureOffset(u_pressure, v_texCoord, ivec2( 1, 0)).x;
-    float B = textureOffset(u_pressure, v_texCoord, ivec2( 0,-1)).x;
-    float T = textureOffset(u_pressure, v_texCoord, ivec2( 0, 1)).x;
-
-    vec2 velocity = texture(u_velocity, v_texCoord).xy;
-
-    // Pavel's formula: subtract gradient directly (no 0.5 factor)
-    // This matches his pressure/divergence scaling convention
-    velocity -= vec2(R - L, T - B);
-
-    fragColor = velocity;
-}
-`;
-
-/**
- * Curl shader - computes vorticity (separate pass like Pavel).
- */
-const CURL_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_velocity;
-uniform vec2 u_texelSize;
-
-in vec2 v_texCoord;
-out float fragColor;
-
-void main() {
-    float L = texture(u_velocity, v_texCoord - vec2(u_texelSize.x, 0.0)).y;
-    float R = texture(u_velocity, v_texCoord + vec2(u_texelSize.x, 0.0)).y;
-    float T = texture(u_velocity, v_texCoord + vec2(0.0, u_texelSize.y)).x;
-    float B = texture(u_velocity, v_texCoord - vec2(0.0, u_texelSize.y)).x;
-    float vorticity = R - L - T + B;
-    fragColor = 0.5 * vorticity;
-}
-`;
-
-/**
- * Vorticity confinement shader (uses precomputed curl).
- * Adds rotational force to amplify existing swirls.
- * EXACTLY like Pavel's implementation.
- */
-const VORTICITY_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_velocity;
-uniform sampler2D u_curl;
-uniform vec2 u_texelSize;
-uniform float u_curlStrength;
-uniform float u_dt;
-
-in vec2 v_texCoord;
-out vec2 fragColor;
-
-void main() {
-    float L = texture(u_curl, v_texCoord - vec2(u_texelSize.x, 0.0)).x;
-    float R = texture(u_curl, v_texCoord + vec2(u_texelSize.x, 0.0)).x;
-    float T = texture(u_curl, v_texCoord + vec2(0.0, u_texelSize.y)).x;
-    float B = texture(u_curl, v_texCoord - vec2(0.0, u_texelSize.y)).x;
-    float C = texture(u_curl, v_texCoord).x;
-
-    vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
-    force /= length(force) + 0.0001;
-    force *= u_curlStrength * C;
-    force.y *= -1.0;
-
-    vec2 velocity = texture(u_velocity, v_texCoord).xy;
-    velocity += force * u_dt;
-    velocity = min(max(velocity, -1000.0), 1000.0);
-    fragColor = velocity;
-}
-`;
-
-/**
- * Display shader - renders dye field with shading, bloom, sunrays, and dithering.
- * Pavel-style rendering with 3D lighting effect.
- */
-const DISPLAY_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_texture;
-uniform sampler2D u_bloom;
-uniform sampler2D u_sunrays;
-uniform vec2 u_texelSize;
-uniform float u_bloomIntensity;
-uniform bool u_bloomEnabled;
-uniform bool u_shadingEnabled;
-uniform bool u_sunraysEnabled;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-// Gamma correction like Pavel (sRGB)
-vec3 linearToGamma(vec3 color) {
-    color = max(color, vec3(0.0));
-    return max(1.055 * pow(color, vec3(0.416666667)) - 0.055, vec3(0.0));
-}
-
-void main() {
-    vec3 c = texture(u_texture, v_texCoord).rgb;
-
-    // SHADING - creates 3D "oily" effect from color gradients (like Pavel)
-    // STRONGER contrast than before!
-    if (u_shadingEnabled) {
-        vec3 lc = texture(u_texture, v_texCoord - vec2(u_texelSize.x, 0.0)).rgb;
-        vec3 rc = texture(u_texture, v_texCoord + vec2(u_texelSize.x, 0.0)).rgb;
-        vec3 tc = texture(u_texture, v_texCoord + vec2(0.0, u_texelSize.y)).rgb;
-        vec3 bc = texture(u_texture, v_texCoord - vec2(0.0, u_texelSize.y)).rgb;
-
-        float dx = length(rc) - length(lc);
-        float dy = length(tc) - length(bc);
-
-        // Pavel's exact normal and lighting formula
-        vec3 n = normalize(vec3(dx, dy, length(u_texelSize)));
-        vec3 l = vec3(0.0, 0.0, 1.0);
-        float diffuse = clamp(dot(n, l) + 0.7, 0.7, 1.0);
-        c *= diffuse;
-    }
-
-    // SUNRAYS first (Pavel's order: shading -> sunrays -> bloom)
-    float sunrays = 1.0;
-    if (u_sunraysEnabled) {
-        sunrays = texture(u_sunrays, v_texCoord).r;
-        c *= sunrays;  // Pavel's exact formula: pure multiply
-    }
-
-    // BLOOM - additive glow (also modulated by sunrays like Pavel)
-    if (u_bloomEnabled) {
-        vec3 bloom = texture(u_bloom, v_texCoord).rgb * u_bloomIntensity;
-        if (u_sunraysEnabled) {
-            bloom *= sunrays;  // Pavel also multiplies bloom by sunrays
-        }
-        c += bloom;
-    }
-
-    // Gamma correction for final output (do BEFORE dithering)
-    c = linearToGamma(c);
-
-    // DITHERING - better algorithm (triangular distribution)
-    // Reduces banding artifacts in gradients
-    vec2 uv = v_texCoord * vec2(1920.0, 1080.0);
-    float noise = fract(52.9829189 * fract(dot(uv, vec2(0.06711056, 0.00583715))));
-    c += (noise - 0.5) / 255.0;
-
-    // Output with alpha based on brightness
-    float a = max(c.r, max(c.g, c.b));
-    fragColor = vec4(c, a);
-}
-`;
-
-/**
- * Bloom prefilter - extracts bright areas with soft knee.
- */
-const BLOOM_PREFILTER_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_texture;
-uniform vec3 u_curve;  // threshold, knee, knee*2
-uniform float u_threshold;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-    vec3 color = texture(u_texture, v_texCoord).rgb;
-
-    // Soft knee curve
-    float brightness = max(max(color.r, color.g), color.b);
-    float soft = brightness - u_curve.x + u_curve.y;
-    soft = clamp(soft, 0.0, u_curve.z);
-    soft = soft * soft / (4.0 * u_curve.y + 0.00001);
-
-    float contribution = max(soft, brightness - u_threshold);
-    contribution /= max(brightness, 0.00001);
-
-    fragColor = vec4(color * contribution, 1.0);
-}
-`;
-
-/**
- * Gaussian blur shader for bloom.
- */
-const BLUR_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_texture;
-uniform vec2 u_texelSize;
-uniform vec2 u_direction;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-    vec4 color = vec4(0.0);
-    vec2 off1 = vec2(1.3846153846) * u_direction * u_texelSize;
-    vec2 off2 = vec2(3.2307692308) * u_direction * u_texelSize;
-
-    color += texture(u_texture, v_texCoord) * 0.2270270270;
-    color += texture(u_texture, v_texCoord + off1) * 0.3162162162;
-    color += texture(u_texture, v_texCoord - off1) * 0.3162162162;
-    color += texture(u_texture, v_texCoord + off2) * 0.0702702703;
-    color += texture(u_texture, v_texCoord - off2) * 0.0702702703;
-
-    fragColor = color;
-}
-`;
-
-/**
- * Bloom final composite - combines bloom mips.
- */
-const BLOOM_FINAL_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_texture;
-uniform float u_intensity;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-    vec3 color = texture(u_texture, v_texCoord).rgb * u_intensity;
-    fragColor = vec4(color, 1.0);
-}
-`;
-
-/**
- * Copy shader - simple texture copy.
- */
-const COPY_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_texture;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-    fragColor = texture(u_texture, v_texCoord);
-}
-`;
-
-/**
- * Sunrays mask shader - converts dye brightness to mask.
- * Pavel's technique: where there's bright fluid, we create light sources.
- */
-const SUNRAYS_MASK_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_texture;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-    vec4 c = texture(u_texture, v_texCoord);
-    float brightness = max(c.r, max(c.g, c.b));
-    // Higher brightness = more light contribution
-    // We want bright fluid to emit light rays
-    fragColor = vec4(vec3(brightness), 1.0);
-}
-`;
-
-/**
- * Sunrays shader - volumetric light scattering from screen center.
- * Based on GPU Gems 3 - Volumetric Light Scattering.
- */
-const SUNRAYS_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_texture;
-uniform float u_weight;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-#define ITERATIONS 16
-
-void main() {
-    float Density = 0.3;
-    float Decay = 0.95;
-    float Exposure = 0.7;
-
-    vec2 coord = v_texCoord;
-    vec2 dir = v_texCoord - 0.5; // Direction from center
-    dir *= 1.0 / float(ITERATIONS) * Density;
-
-    float illuminationDecay = 1.0;
-    float color = texture(u_texture, v_texCoord).r;
-
-    for (int i = 0; i < ITERATIONS; i++) {
-        coord -= dir;
-        float sample_ = texture(u_texture, coord).r;
-        sample_ *= illuminationDecay * u_weight;
-        color += sample_;
-        illuminationDecay *= Decay;
-    }
-
-    fragColor = vec4(vec3(color * Exposure), 1.0);
-}
-`;
-
-/**
- * Clear shader - scales previous pressure by coefficient (Pavel's approach).
- * This helps Jacobi solver converge faster by starting closer to solution.
- */
-const CLEAR_FRAG = `#version 300 es
-precision mediump float;
-
-uniform sampler2D u_texture;
-uniform float u_value;
-
-in vec2 v_texCoord;
-out float fragColor;
-
-void main() {
-    // Sample previous pressure and scale it (Pavel uses 0.8)
-    // This keeps 80% of previous pressure for faster convergence
-    fragColor = u_value * texture(u_texture, v_texCoord).r;
-}
-`;
-
-/**
- * Splat shader - injects color at a position.
- */
-const SPLAT_FRAG = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_target;
-uniform vec2 u_point;
-uniform vec3 u_color;
-uniform float u_radius;
-uniform float u_aspectRatio;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-void main() {
-    vec2 p = v_texCoord - u_point;
-    p.x *= u_aspectRatio;
-
-    float splat = exp(-dot(p, p) / u_radius);
-    vec3 base = texture(u_target, v_texCoord).rgb;
-
-    fragColor = vec4(base + u_color * splat, 1.0);
-}
-`;
-
-// =============================================================================
-// COLOR PALETTE
-// =============================================================================
-
-/**
- * Aurora Borealis color palette.
- * @type {Object.<string, number[]>}
- */
-const COLORS = {
-    bg: [0.02, 0.02, 0.04],        // #050510
-    primary: [0.0, 1.0, 0.53],     // #00FF87
-    secondary: [0.49, 0.23, 0.93], // #7C3AED
-    accent: [0.0, 0.83, 1.0]       // #00D4FF
-};
-
-// =============================================================================
-// DEFAULT CONFIGURATION
-// =============================================================================
-
-/**
- * Default simulation configuration.
- * @type {Object}
- */
-const DEFAULT_CONFIG = {
-    gridSize: 128,              // SIM_RESOLUTION like Pavel
-    dyeSize: 1024,              // DYE_RESOLUTION like Pavel (high res!)
-    pressureIterations: 20,
-    pressure: 0.8,              // Like Pavel - pressure coefficient
-    velocityDissipation: 0.2,   // Like Pavel - low = persists longer
-    dyeDissipation: 1.0,        // Like Pavel - no dissipation (1.0 = none)
-    curl: 30,                   // Like Pavel - vorticity strength
-    // Splat settings - CRITICAL for visuals (Pavel: 0.25/100 = 0.0025)
-    splatRadius: 0.0025,        // Like Pavel
-    splatForce: 6000,           // Like Pavel
-    // Legacy force settings (for noise)
-    forceRadius: 0.0025,
-    forceStrength: 6000,
-    noiseScale: 4.0,
-    noiseStrength: 0.0,
-    intensity: 1.0,
-    // Bloom settings - Like Pavel
-    bloomEnabled: true,
-    bloomIntensity: 0.8,
-    bloomThreshold: 0.6,
-    bloomSoftKnee: 0.7,
-    bloomIterations: 8,
-    // Sunrays - KEY visual effect from Pavel!
-    sunraysEnabled: true,
-    sunraysResolution: 196,
-    sunraysWeight: 1.0,
-    // Shading
-    shadingEnabled: true,       // 3D effect like Pavel
-    // Color settings
-    colorUpdateSpeed: 10
-};
+import { loadShaders, SHADER_PATHS } from './shader-loader.js';
+import { COLORS, DEFAULT_CONFIG, mergeConfig } from './config.js';
 
 // =============================================================================
 // FLUID SOLVER CLASS
@@ -709,7 +60,7 @@ export class FluidSolver {
      */
     constructor(canvas, config = {}) {
         this.canvas = canvas;
-        this.config = { ...DEFAULT_CONFIG, ...config };
+        this.config = mergeConfig(config);
 
         // Create WebGL context
         const contextResult = createContext(canvas);
@@ -740,11 +91,12 @@ export class FluidSolver {
         this._programs = {};
         this._fbos = {};
         this._vao = null;
+        this._shaders = null; // Loaded shader sources
     }
 
     /**
      * Initializes the fluid solver.
-     * Creates shader programs, FBOs, and VAO.
+     * Loads external shaders, creates programs, FBOs, and VAO.
      *
      * @async
      * @returns {Promise<void>}
@@ -752,6 +104,11 @@ export class FluidSolver {
      */
     async init() {
         const gl = this.gl;
+
+        // Load external shaders
+        console.log('Loading shaders...');
+        this._shaders = await loadShaders(SHADER_PATHS);
+        console.log('Shaders loaded successfully');
 
         // Create shader programs
         this._createPrograms();
@@ -881,36 +238,37 @@ export class FluidSolver {
     }
 
     /**
-     * Creates all shader programs.
+     * Creates all shader programs using loaded external shaders.
      * @private
      */
     _createPrograms() {
         const gl = this.gl;
+        const s = this._shaders;
 
         // Simulation programs
-        this._programs.advect = createProgram(gl, QUAD_VERT, ADVECT_FRAG);
-        this._programs.forces = createProgram(gl, QUAD_VERT, FORCES_FRAG);
-        this._programs.dye = createProgram(gl, QUAD_VERT, DYE_FRAG);
-        this._programs.divergence = createProgram(gl, QUAD_VERT, DIVERGENCE_FRAG);
-        this._programs.pressure = createProgram(gl, QUAD_VERT, PRESSURE_FRAG);
-        this._programs.gradient = createProgram(gl, QUAD_VERT, GRADIENT_FRAG);
-        this._programs.curl = createProgram(gl, QUAD_VERT, CURL_FRAG);
-        this._programs.vorticity = createProgram(gl, QUAD_VERT, VORTICITY_FRAG);
+        this._programs.advect = createProgram(gl, s.quadVert, s.advectFrag);
+        this._programs.forces = createProgram(gl, s.quadVert, s.forcesFrag);
+        this._programs.dye = createProgram(gl, s.quadVert, s.dyeFrag);
+        this._programs.divergence = createProgram(gl, s.quadVert, s.divergenceFrag);
+        this._programs.pressure = createProgram(gl, s.quadVert, s.pressureFrag);
+        this._programs.gradient = createProgram(gl, s.quadVert, s.gradientFrag);
+        this._programs.curl = createProgram(gl, s.quadVert, s.curlFrag);
+        this._programs.vorticity = createProgram(gl, s.quadVert, s.vorticityFrag);
 
         // Rendering programs
-        this._programs.display = createProgram(gl, QUAD_VERT, DISPLAY_FRAG);
-        this._programs.copy = createProgram(gl, QUAD_VERT, COPY_FRAG);
-        this._programs.splat = createProgram(gl, QUAD_VERT, SPLAT_FRAG);
-        this._programs.clear = createProgram(gl, QUAD_VERT, CLEAR_FRAG);
+        this._programs.display = createProgram(gl, s.quadVert, s.displayFrag);
+        this._programs.copy = createProgram(gl, s.quadVert, s.copyFrag);
+        this._programs.splat = createProgram(gl, s.quadVert, s.splatFrag);
+        this._programs.clear = createProgram(gl, s.quadVert, s.clearFrag);
 
         // Bloom programs
-        this._programs.bloomPrefilter = createProgram(gl, QUAD_VERT, BLOOM_PREFILTER_FRAG);
-        this._programs.blur = createProgram(gl, QUAD_VERT, BLUR_FRAG);
-        this._programs.bloomFinal = createProgram(gl, QUAD_VERT, BLOOM_FINAL_FRAG);
+        this._programs.bloomPrefilter = createProgram(gl, s.quadVert, s.bloomPrefilterFrag);
+        this._programs.blur = createProgram(gl, s.quadVert, s.blurFrag);
+        this._programs.bloomFinal = createProgram(gl, s.quadVert, s.bloomFinalFrag);
 
         // Sunrays programs - Pavel's volumetric light effect
-        this._programs.sunraysMask = createProgram(gl, QUAD_VERT, SUNRAYS_MASK_FRAG);
-        this._programs.sunrays = createProgram(gl, QUAD_VERT, SUNRAYS_FRAG);
+        this._programs.sunraysMask = createProgram(gl, s.quadVert, s.sunraysMaskFrag);
+        this._programs.sunrays = createProgram(gl, s.quadVert, s.sunraysFrag);
     }
 
     /**
@@ -1349,9 +707,6 @@ export class FluidSolver {
         gl.bindTexture(gl.TEXTURE_2D, this._fbos.divergence.texture);
         gl.uniform1i(program.uniforms.u_divergence, 1);
 
-        // Clear pressure to start fresh (optional - can skip for faster convergence)
-        // this._clearFBO(this._fbos.pressure);
-
         // Iterate
         for (let i = 0; i < this.config.pressureIterations; i++) {
             // Bind current pressure
@@ -1519,11 +874,6 @@ export class FluidSolver {
             gl.activeTexture(gl.TEXTURE2);
             gl.bindTexture(gl.TEXTURE_2D, this._sunraysFBO.texture);
             gl.uniform1i(program.uniforms.u_sunrays, 2);
-        }
-
-        // Debug: log uniform values periodically
-        if (Math.random() < 0.001) {
-            console.log('Render uniforms:', { bloomIntensity, bloomEnabled, sunraysEnabled, sunraysWeight });
         }
 
         gl.uniform1f(program.uniforms.u_bloomIntensity, bloomIntensity);
@@ -1750,13 +1100,6 @@ export class FluidSolver {
     setConfig(newConfig) {
         const oldGridSize = this.config.gridSize;
         const oldDyeSize = this.config.dyeSize;
-
-        // Debug: log config changes
-        for (const [key, value] of Object.entries(newConfig)) {
-            if (this.config[key] !== value) {
-                console.log(`Config: ${key} = ${value}`);
-            }
-        }
 
         this.config = { ...this.config, ...newConfig };
 
