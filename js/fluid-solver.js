@@ -97,9 +97,6 @@ export class FluidSolver {
 
         // Effects renderer (initialized after programs are created)
         this._effects = null;
-
-        // Physics simulation (initialized after programs and FBOs are created)
-        this._simulation = null;
     }
 
     /**
@@ -134,7 +131,7 @@ export class FluidSolver {
         }, this.formats, this.config);
         this._effects.initFBOs(this.canvas.width, this.canvas.height);
 
-        // Initialize physics simulation with simulation programs
+        // Initialize physics simulation (for future use)
         this._simulation = new FluidSimulation(gl, {
             advect: this._programs.advect,
             divergence: this._programs.divergence,
@@ -196,11 +193,15 @@ export class FluidSolver {
             // Generate color (Pavel-style: bright but not blinding)
             const color = this._generateColor();
 
-            // Apply force (velocity splat)
-            this._applyForce({
-                position: [x, y],
-                direction: [dx, dy]
-            }, null, aspectRatio);
+            // Apply force (velocity splat) via simulation module
+            const forceRadius = (this.config.splatRadius || 0.0025) * 2;
+            this._simulation.applyForceSplat(
+                [x, y],
+                [dx, dy],
+                forceRadius,
+                aspectRatio,
+                this._drawQuad.bind(this)
+            );
 
             // Apply colored dye with reasonable radius
             this._applySplat([x, y], color, splatRadius, aspectRatio);
@@ -450,9 +451,13 @@ export class FluidSolver {
             this._drawQuad.bind(this)
         );
 
-        // Update local time from simulation
+        // Sync time from simulation
         this._time = this._simulation.time;
     }
+
+    // =========================================================================
+    // Physics methods moved to simulation.js (FluidSimulation class)
+    // =========================================================================
 
     /**
      * Renders the fluid visualization to the canvas.
@@ -626,7 +631,7 @@ export class FluidSolver {
                 );
             }
 
-            // Update simulation FBO references after resize
+            // Sync FBOs with simulation after any resize
             if (this._simulation && (this.config.gridSize !== oldGridSize || this.config.dyeSize !== oldDyeSize)) {
                 this._simulation.setFBOs(this._fbos);
             }
