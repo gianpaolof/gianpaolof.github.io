@@ -186,12 +186,28 @@ in vec2 v_texCoord;
 out float fragColor;
 
 void main() {
-    float vL = textureOffset(u_velocity, v_texCoord, ivec2(-1, 0)).x;
-    float vR = textureOffset(u_velocity, v_texCoord, ivec2( 1, 0)).x;
-    float vB = textureOffset(u_velocity, v_texCoord, ivec2( 0,-1)).y;
-    float vT = textureOffset(u_velocity, v_texCoord, ivec2( 0, 1)).y;
+    // Sample neighbor velocities
+    float L = textureOffset(u_velocity, v_texCoord, ivec2(-1, 0)).x;
+    float R = textureOffset(u_velocity, v_texCoord, ivec2( 1, 0)).x;
+    float B = textureOffset(u_velocity, v_texCoord, ivec2( 0,-1)).y;
+    float T = textureOffset(u_velocity, v_texCoord, ivec2( 0, 1)).y;
 
-    float divergence = 0.5 * (vR - vL + vT - vB);
+    // Sample center velocity for boundary conditions
+    vec2 C = texture(u_velocity, v_texCoord).xy;
+
+    // Free-slip boundary conditions (Pavel's approach)
+    // At boundaries, flip velocity to prevent penetration
+    vec2 coordL = v_texCoord - vec2(u_texelSize.x, 0.0);
+    vec2 coordR = v_texCoord + vec2(u_texelSize.x, 0.0);
+    vec2 coordT = v_texCoord + vec2(0.0, u_texelSize.y);
+    vec2 coordB = v_texCoord - vec2(0.0, u_texelSize.y);
+
+    if (coordL.x < 0.0) { L = -C.x; }
+    if (coordR.x > 1.0) { R = -C.x; }
+    if (coordT.y > 1.0) { T = -C.y; }
+    if (coordB.y < 0.0) { B = -C.y; }
+
+    float divergence = 0.5 * (R - L + T - B);
     fragColor = divergence;
 }
 `;
@@ -236,15 +252,18 @@ in vec2 v_texCoord;
 out vec2 fragColor;
 
 void main() {
-    float pL = textureOffset(u_pressure, v_texCoord, ivec2(-1, 0)).x;
-    float pR = textureOffset(u_pressure, v_texCoord, ivec2( 1, 0)).x;
-    float pB = textureOffset(u_pressure, v_texCoord, ivec2( 0,-1)).x;
-    float pT = textureOffset(u_pressure, v_texCoord, ivec2( 0, 1)).x;
+    float L = textureOffset(u_pressure, v_texCoord, ivec2(-1, 0)).x;
+    float R = textureOffset(u_pressure, v_texCoord, ivec2( 1, 0)).x;
+    float B = textureOffset(u_pressure, v_texCoord, ivec2( 0,-1)).x;
+    float T = textureOffset(u_pressure, v_texCoord, ivec2( 0, 1)).x;
 
-    vec2 gradient = vec2(pR - pL, pT - pB) * 0.5;
     vec2 velocity = texture(u_velocity, v_texCoord).xy;
 
-    fragColor = velocity - gradient;
+    // Pavel's formula: subtract gradient directly (no 0.5 factor)
+    // This matches his pressure/divergence scaling convention
+    velocity -= vec2(R - L, T - B);
+
+    fragColor = velocity;
 }
 `;
 
@@ -1148,6 +1167,81 @@ export class FluidSolver {
             this._clearFBO(this._fbos.pressure);
             this._clearFBO(this._fbos.dye);
         }
+    }
+
+    /**
+     * Adds random splats (public API for UI).
+     * @param {number} amount - Number of splats to add
+     */
+    addRandomSplats(amount = 5) {
+        this._addInitialSplats(amount);
+    }
+
+    /**
+     * Adds initial splats with color (Pavel's multipleSplats).
+     * @param {number} amount - Number of splats to add
+     * @private
+     */
+    _addInitialSplats(amount = 5) {
+        const aspectRatio = this.canvas.width / this.canvas.height;
+        // Use config splat radius, slightly larger for random splats
+        const splatRadius = (this.config.splatRadius || 0.0025) * 2;
+
+        for (let i = 0; i < amount; i++) {
+            // Random position across entire screen
+            const x = Math.random();
+            const y = Math.random();
+
+            // Random velocity direction (Pavel-style)
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 200 + Math.random() * 200; // Moderate speed
+            const dx = Math.cos(angle) * speed;
+            const dy = Math.sin(angle) * speed;
+
+            // Generate color (Pavel-style: bright but not blinding)
+            const color = this._generateColor();
+
+            // Apply force (velocity splat)
+            this._applyForce({
+                position: [x, y],
+                direction: [dx, dy]
+            }, null, aspectRatio);
+
+            // Apply colored dye with reasonable radius
+            this._applySplat([x, y], color, splatRadius, aspectRatio);
+        }
+    }
+
+    /**
+     * Generates a random vibrant color using HSV (Pavel's method).
+     * @private
+     * @returns {number[]} RGB color array - BRIGHT and saturated!
+     */
+    _generateColor() {
+        // Pavel uses random hue, full saturation, full value
+        const hue = Math.random();
+        const sat = 1.0;
+        const val = 1.0;
+
+        // HSV to RGB conversion
+        const i = Math.floor(hue * 6);
+        const f = hue * 6 - i;
+        const p = val * (1 - sat);
+        const q = val * (1 - f * sat);
+        const t = val * (1 - (1 - f) * sat);
+
+        let r, g, b;
+        switch (i % 6) {
+            case 0: r = val; g = t; b = p; break;
+            case 1: r = q; g = val; b = p; break;
+            case 2: r = p; g = val; b = t; break;
+            case 3: r = p; g = q; b = val; break;
+            case 4: r = t; g = p; b = val; break;
+            case 5: r = val; g = p; b = q; break;
+        }
+
+        // Reduced intensity to prevent white blowout when colors mix
+        return [r * 0.7, g * 0.7, b * 0.7];
     }
 
     /**
