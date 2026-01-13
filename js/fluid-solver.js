@@ -24,6 +24,7 @@ import {
 import { loadShaders, SHADER_PATHS } from './shader-loader.js';
 import { COLORS, DEFAULT_CONFIG, mergeConfig } from './config.js';
 import { EffectsRenderer } from './effects.js';
+import { FluidSimulation } from './simulation.js';
 
 // =============================================================================
 // FLUID SOLVER CLASS
@@ -96,6 +97,9 @@ export class FluidSolver {
 
         // Effects renderer (initialized after programs are created)
         this._effects = null;
+
+        // Physics simulation (initialized after programs and FBOs are created)
+        this._simulation = null;
     }
 
     /**
@@ -129,6 +133,18 @@ export class FluidSolver {
             sunrays: this._programs.sunrays
         }, this.formats, this.config);
         this._effects.initFBOs(this.canvas.width, this.canvas.height);
+
+        // Initialize physics simulation with simulation programs
+        this._simulation = new FluidSimulation(gl, {
+            advect: this._programs.advect,
+            divergence: this._programs.divergence,
+            pressure: this._programs.pressure,
+            gradient: this._programs.gradient,
+            curl: this._programs.curl,
+            vorticity: this._programs.vorticity,
+            splat: this._programs.splat,
+            clear: this._programs.clear
+        }, this._fbos, this.config);
 
         // Create VAO for attribute-less rendering
         this._vao = gl.createVertexArray();
@@ -406,7 +422,7 @@ export class FluidSolver {
 
     /**
      * Performs one simulation step.
-     * Order matches Pavel's implementation.
+     * Delegates physics to FluidSimulation module.
      *
      * @param {number} dt - Delta time in seconds
      * @param {Array} [forces=[]] - Array of force objects
@@ -416,18 +432,6 @@ export class FluidSolver {
             return;
         }
 
-        const gl = this.gl;
-
-        // Cap dt to prevent instability
-        dt = Math.min(dt, 0.016666);
-
-        // Accumulate simulation time
-        this._time += dt;
-
-        const { gridSize } = this.config;
-        const texelSize = [1.0 / gridSize, 1.0 / gridSize];
-        const aspectRatio = this.canvas.width / this.canvas.height;
-
         // Combine external forces with pending forces
         const allForces = [...forces, ...this._pendingForces];
         this._pendingForces = [];
@@ -436,327 +440,18 @@ export class FluidSolver {
         const allDye = [...this._pendingDye];
         this._pendingDye = [];
 
-        // =================================================================
-        // PASS 1: APPLY INPUT FORCES (splats)
-        // =================================================================
-        for (const force of allForces) {
-            this._applyForce(force, texelSize, aspectRatio);
-        }
-
-        // =================================================================
-        // PASS 2: APPLY INPUT DYE (colors)
-        // =================================================================
-        for (const dye of allDye) {
-            this._applyDye(dye, aspectRatio);
-        }
-
-        // =================================================================
-        // PASS 3: COMPUTE CURL (vorticity scalar field)
-        // =================================================================
-        if (this.config.curl > 0) {
-            this._computeCurl(texelSize);
-        }
-
-        // =================================================================
-        // PASS 4: APPLY VORTICITY CONFINEMENT
-        // =================================================================
-        if (this.config.curl > 0) {
-            this._applyVorticity(dt, texelSize);
-        }
-
-        // =================================================================
-        // PASS 5: COMPUTE DIVERGENCE
-        // =================================================================
-        this._computeDivergence(texelSize);
-
-        // =================================================================
-        // PASS 6: SCALE PRESSURE (Pavel's approach for faster convergence)
-        // =================================================================
-        this._clearPressure();
-
-        // =================================================================
-        // PASS 7: PRESSURE SOLVE (Jacobi iteration)
-        // =================================================================
-        this._solvePressure();
-
-        // =================================================================
-        // PASS 8: GRADIENT SUBTRACTION (projection)
-        // =================================================================
-        this._subtractGradient();
-
-        // =================================================================
-        // PASS 9: ADVECT VELOCITY (self-advection) - AFTER projection!
-        // =================================================================
-        this._advect(
-            this._fbos.velocity,
-            this._fbos.velocity,
+        // Delegate physics to FluidSimulation
+        const aspectRatio = this.canvas.width / this.canvas.height;
+        this._simulation.step(
             dt,
-            this.config.velocityDissipation,
-            texelSize
+            allForces,
+            allDye,
+            aspectRatio,
+            this._drawQuad.bind(this)
         );
 
-        // =================================================================
-        // PASS 10: ADVECT DYE
-        // =================================================================
-        const dyeSize = this.config.dyeSize;
-        const dyeTexelSize = [1.0 / dyeSize, 1.0 / dyeSize];
-        this._advectDye(dt, dyeTexelSize);
-    }
-
-    /**
-     * Advects a field using the velocity field.
-     * @private
-     * @param {DoubleFBO} targetFBO - Target FBO to write to
-     * @param {DoubleFBO} sourceFBO - Source FBO to sample from
-     * @param {number} dt - Delta time
-     * @param {number} dissipation - Dissipation rate
-     * @param {number[]} velocityTexelSize - Texel size for velocity (1/gridSize)
-     * @param {number[]} [sourceTexelSize] - Texel size for source texture (defaults to velocityTexelSize)
-     */
-    _advect(targetFBO, sourceFBO, dt, dissipation, velocityTexelSize, sourceTexelSize = null) {
-        const gl = this.gl;
-        const program = this._programs.advect;
-
-        // If no source texel size provided, use velocity texel size
-        const srcTexelSize = sourceTexelSize || velocityTexelSize;
-
-        program.use();
-
-        // Bind velocity texture to unit 0
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 0);
-
-        // Bind source texture to unit 1 (may be same as velocity)
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, sourceFBO.texture);
-        gl.uniform1i(program.uniforms.u_source, 1);
-
-        // Set uniforms - CRITICAL: use correct texelSize for each purpose!
-        // u_texelSize: for velocity backtrace step (1/gridSize)
-        // u_sourceTexelSize: for bilerp sampling source texture
-        gl.uniform2f(program.uniforms.u_texelSize, velocityTexelSize[0], velocityTexelSize[1]);
-        gl.uniform2f(program.uniforms.u_sourceTexelSize, srcTexelSize[0], srcTexelSize[1]);
-        gl.uniform1f(program.uniforms.u_dt, dt);
-        gl.uniform1f(program.uniforms.u_dissipation, dissipation);
-
-        // Render to target
-        targetFBO.bindWrite();
-        this._drawQuad();
-        targetFBO.swap();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * Applies a single force to the velocity field using splat shader (like Pavel).
-     * @private
-     */
-    _applyForce(force, texelSize, aspectRatio) {
-        const gl = this.gl;
-        const program = this._programs.splat;
-
-        program.use();
-
-        // Bind velocity texture as target
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_target, 0);
-
-        // Position
-        gl.uniform2f(program.uniforms.u_point, force.position[0], force.position[1]);
-
-        // Pass velocity delta as "color" (like Pavel does)
-        const dx = force.direction[0];
-        const dy = force.direction[1];
-        gl.uniform3f(program.uniforms.u_color, dx, dy, 0.0);
-
-        // Pass radius directly - aspect correction is done in shader via p.x
-        const radius = force.radius || this.config.forceRadius;
-        gl.uniform1f(program.uniforms.u_radius, radius);
-        gl.uniform1f(program.uniforms.u_aspectRatio, aspectRatio);
-
-        // Render to velocity
-        this._fbos.velocity.bindWrite();
-        this._drawQuad();
-        this._fbos.velocity.swap();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * Applies dye at a position using splat shader.
-     * @private
-     */
-    _applyDye(dye, aspectRatio) {
-        // Use the splat method for consistent dye application
-        this._applySplat(
-            [dye.position[0], dye.position[1]],
-            dye.color,
-            dye.radius || this.config.splatRadius,
-            aspectRatio
-        );
-    }
-
-    /**
-     * Computes divergence of velocity field.
-     * @private
-     */
-    _computeDivergence(texelSize) {
-        const gl = this.gl;
-        const program = this._programs.divergence;
-
-        program.use();
-
-        // Bind velocity texture
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 0);
-
-        gl.uniform2f(program.uniforms.u_texelSize, texelSize[0], texelSize[1]);
-
-        // Render to divergence FBO
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._fbos.divergence.framebuffer);
-        gl.viewport(0, 0, this._fbos.divergence.width, this._fbos.divergence.height);
-        this._drawQuad();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * Iteratively solves pressure using Jacobi method.
-     * @private
-     */
-    _solvePressure() {
-        const gl = this.gl;
-        const program = this._programs.pressure;
-
-        program.use();
-
-        // Bind divergence texture (constant during solve)
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.divergence.texture);
-        gl.uniform1i(program.uniforms.u_divergence, 1);
-
-        // Iterate
-        for (let i = 0; i < this.config.pressureIterations; i++) {
-            // Bind current pressure
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this._fbos.pressure.texture);
-            gl.uniform1i(program.uniforms.u_pressure, 0);
-
-            // Render to write buffer
-            this._fbos.pressure.bindWrite();
-            this._drawQuad();
-            this._fbos.pressure.swap();
-        }
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * Subtracts pressure gradient from velocity.
-     * @private
-     */
-    _subtractGradient() {
-        const gl = this.gl;
-        const program = this._programs.gradient;
-
-        program.use();
-
-        // Bind pressure texture
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.pressure.texture);
-        gl.uniform1i(program.uniforms.u_pressure, 0);
-
-        // Bind velocity texture
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 1);
-
-        // Render
-        this._fbos.velocity.bindWrite();
-        this._drawQuad();
-        this._fbos.velocity.swap();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * Computes curl (vorticity) of the velocity field.
-     * @private
-     */
-    _computeCurl(texelSize) {
-        const gl = this.gl;
-        const program = this._programs.curl;
-
-        program.use();
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 0);
-
-        gl.uniform2f(program.uniforms.u_texelSize, texelSize[0], texelSize[1]);
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._fbos.curl.framebuffer);
-        gl.viewport(0, 0, this._fbos.curl.width, this._fbos.curl.height);
-        this._drawQuad();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * Applies vorticity confinement using precomputed curl.
-     * @private
-     */
-    _applyVorticity(dt, texelSize) {
-        const gl = this.gl;
-        const program = this._programs.vorticity;
-
-        program.use();
-
-        // Bind velocity texture
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
-        gl.uniform1i(program.uniforms.u_velocity, 0);
-
-        // Bind curl texture
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this._fbos.curl.texture);
-        gl.uniform1i(program.uniforms.u_curl, 1);
-
-        // Set uniforms
-        gl.uniform2f(program.uniforms.u_texelSize, texelSize[0], texelSize[1]);
-        gl.uniform1f(program.uniforms.u_curlStrength, this.config.curl);
-        gl.uniform1f(program.uniforms.u_dt, dt);
-
-        // Render
-        this._fbos.velocity.bindWrite();
-        this._drawQuad();
-        this._fbos.velocity.swap();
-
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    }
-
-    /**
-     * Advects dye field using velocity.
-     * Uses velocity-scale texelSize for backtrace, dye-scale for sampling.
-     * @private
-     */
-    _advectDye(dt, dyeTexelSize) {
-        // Velocity texelSize for backtrace calculation
-        const { gridSize } = this.config;
-        const velocityTexelSize = [1.0 / gridSize, 1.0 / gridSize];
-
-        // Use the generalized _advect with both texel sizes
-        this._advect(
-            this._fbos.dye,
-            this._fbos.dye,
-            dt,
-            this.config.dyeDissipation,
-            velocityTexelSize,  // For backtrace step
-            dyeTexelSize        // For bilerp sampling (1/dyeSize)
-        );
+        // Update local time from simulation
+        this._time = this._simulation.time;
     }
 
     /**
@@ -888,6 +583,11 @@ export class FluidSolver {
             this._effects.setConfig(this.config);
         }
 
+        // Update simulation config
+        if (this._simulation) {
+            this._simulation.setConfig(this.config);
+        }
+
         // Resize FBOs if grid size changed
         if (this._initialized) {
             if (this.config.gridSize !== oldGridSize) {
@@ -924,6 +624,11 @@ export class FluidSolver {
                     this.config.dyeSize,
                     this.config.dyeSize
                 );
+            }
+
+            // Update simulation FBO references after resize
+            if (this._simulation && (this.config.gridSize !== oldGridSize || this.config.dyeSize !== oldDyeSize)) {
+                this._simulation.setFBOs(this._fbos);
             }
         }
     }
