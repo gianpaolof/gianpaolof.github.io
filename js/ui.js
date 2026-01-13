@@ -221,8 +221,8 @@ class AdvancedControlPanel {
         // Initialize all controls
         this.initControls();
 
-        // Start with panel open
-        this.open();
+        // Start with panel closed
+        this.close();
     }
 
     initControls() {

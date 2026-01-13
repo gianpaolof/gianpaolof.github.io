@@ -1,9 +1,10 @@
 #version 300 es
 precision highp float;
 
-// Divergence calculation shader
-// Computes the divergence of the velocity field using central differences
-// div(v) = dv_x/dx + dv_y/dy
+/**
+ * Divergence calculation shader.
+ * Computes divergence using central differences with boundary conditions.
+ */
 
 uniform sampler2D u_velocity;
 uniform vec2 u_texelSize;
@@ -12,16 +13,27 @@ in vec2 v_texCoord;
 out float fragColor;
 
 void main() {
-    // Sample neighboring velocities using textureOffset for better cache locality
-    float vL = textureOffset(u_velocity, v_texCoord, ivec2(-1, 0)).x;  // Left
-    float vR = textureOffset(u_velocity, v_texCoord, ivec2( 1, 0)).x;  // Right
-    float vB = textureOffset(u_velocity, v_texCoord, ivec2( 0,-1)).y;  // Bottom
-    float vT = textureOffset(u_velocity, v_texCoord, ivec2( 0, 1)).y;  // Top
+    // Sample neighbor velocities
+    float L = textureOffset(u_velocity, v_texCoord, ivec2(-1, 0)).x;
+    float R = textureOffset(u_velocity, v_texCoord, ivec2( 1, 0)).x;
+    float B = textureOffset(u_velocity, v_texCoord, ivec2( 0,-1)).y;
+    float T = textureOffset(u_velocity, v_texCoord, ivec2( 0, 1)).y;
 
-    // Central difference divergence
-    // Factor of 0.5 comes from 1/(2*dx) where dx=1 grid cell
-    float divergence = 0.5 * (vR - vL + vT - vB);
+    // Sample center velocity for boundary conditions
+    vec2 C = texture(u_velocity, v_texCoord).xy;
 
-    // Output divergence (positive = source, negative = sink)
+    // Free-slip boundary conditions (Pavel's approach)
+    // At boundaries, flip velocity to prevent penetration
+    vec2 coordL = v_texCoord - vec2(u_texelSize.x, 0.0);
+    vec2 coordR = v_texCoord + vec2(u_texelSize.x, 0.0);
+    vec2 coordT = v_texCoord + vec2(0.0, u_texelSize.y);
+    vec2 coordB = v_texCoord - vec2(0.0, u_texelSize.y);
+
+    if (coordL.x < 0.0) { L = -C.x; }
+    if (coordR.x > 1.0) { R = -C.x; }
+    if (coordT.y > 1.0) { T = -C.y; }
+    if (coordB.y < 0.0) { B = -C.y; }
+
+    float divergence = 0.5 * (R - L + T - B);
     fragColor = divergence;
 }
