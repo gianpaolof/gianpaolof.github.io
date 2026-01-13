@@ -17,21 +17,21 @@
  */
 export const QUALITY_PRESETS = {
     desktop: {
-        gridSize: 256,
-        dyeSize: 512,
+        gridSize: 128,         // SIM_RESOLUTION like Pavel
+        dyeSize: 1024,         // DYE_RESOLUTION like Pavel - high res for visuals!
         pressureIterations: 20,
         targetFPS: 60
     },
     mobile: {
-        gridSize: 128,
-        dyeSize: 256,
-        pressureIterations: 12,
+        gridSize: 128,         // Same sim resolution
+        dyeSize: 512,          // Like Pavel's mobile
+        pressureIterations: 20,
         targetFPS: 30
     },
     fallback: {
-        gridSize: 96,
-        dyeSize: 192,
-        pressureIterations: 6,
+        gridSize: 64,
+        dyeSize: 256,
+        pressureIterations: 10,
         targetFPS: 30
     }
 };
@@ -358,9 +358,9 @@ export function getTextureFormats(gl, isWebGL2) {
                 filter: gl.LINEAR
             },
             DYE_FORMAT: {
-                internalFormat: gl.RGBA8,
+                internalFormat: gl.RGBA16F,
                 format: gl.RGBA,
-                type: gl.UNSIGNED_BYTE,
+                type: gl.HALF_FLOAT,
                 filter: gl.LINEAR
             }
         };
