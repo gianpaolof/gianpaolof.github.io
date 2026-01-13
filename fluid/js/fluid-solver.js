@@ -204,12 +204,28 @@ in vec2 v_texCoord;
 out float fragColor;
 
 void main() {
-    float vL = textureOffset(u_velocity, v_texCoord, ivec2(-1, 0)).x;
-    float vR = textureOffset(u_velocity, v_texCoord, ivec2( 1, 0)).x;
-    float vB = textureOffset(u_velocity, v_texCoord, ivec2( 0,-1)).y;
-    float vT = textureOffset(u_velocity, v_texCoord, ivec2( 0, 1)).y;
+    // Sample neighbor velocities
+    float L = textureOffset(u_velocity, v_texCoord, ivec2(-1, 0)).x;
+    float R = textureOffset(u_velocity, v_texCoord, ivec2( 1, 0)).x;
+    float B = textureOffset(u_velocity, v_texCoord, ivec2( 0,-1)).y;
+    float T = textureOffset(u_velocity, v_texCoord, ivec2( 0, 1)).y;
 
-    float divergence = 0.5 * (vR - vL + vT - vB);
+    // Sample center velocity for boundary conditions
+    vec2 C = texture(u_velocity, v_texCoord).xy;
+
+    // Free-slip boundary conditions (Pavel's approach)
+    // At boundaries, flip velocity to prevent penetration
+    vec2 coordL = v_texCoord - vec2(u_texelSize.x, 0.0);
+    vec2 coordR = v_texCoord + vec2(u_texelSize.x, 0.0);
+    vec2 coordT = v_texCoord + vec2(0.0, u_texelSize.y);
+    vec2 coordB = v_texCoord - vec2(0.0, u_texelSize.y);
+
+    if (coordL.x < 0.0) { L = -C.x; }
+    if (coordR.x > 1.0) { R = -C.x; }
+    if (coordT.y > 1.0) { T = -C.y; }
+    if (coordB.y < 0.0) { B = -C.y; }
+
+    float divergence = 0.5 * (R - L + T - B);
     fragColor = divergence;
 }
 `;
@@ -254,15 +270,18 @@ in vec2 v_texCoord;
 out vec2 fragColor;
 
 void main() {
-    float pL = textureOffset(u_pressure, v_texCoord, ivec2(-1, 0)).x;
-    float pR = textureOffset(u_pressure, v_texCoord, ivec2( 1, 0)).x;
-    float pB = textureOffset(u_pressure, v_texCoord, ivec2( 0,-1)).x;
-    float pT = textureOffset(u_pressure, v_texCoord, ivec2( 0, 1)).x;
+    float L = textureOffset(u_pressure, v_texCoord, ivec2(-1, 0)).x;
+    float R = textureOffset(u_pressure, v_texCoord, ivec2( 1, 0)).x;
+    float B = textureOffset(u_pressure, v_texCoord, ivec2( 0,-1)).x;
+    float T = textureOffset(u_pressure, v_texCoord, ivec2( 0, 1)).x;
 
-    vec2 gradient = vec2(pR - pL, pT - pB) * 0.5;
     vec2 velocity = texture(u_velocity, v_texCoord).xy;
 
-    fragColor = velocity - gradient;
+    // Pavel's formula: subtract gradient directly (no 0.5 factor)
+    // This matches his pressure/divergence scaling convention
+    velocity -= vec2(R - L, T - B);
+
+    fragColor = velocity;
 }
 `;
 
