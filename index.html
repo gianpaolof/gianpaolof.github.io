@@ -78,6 +78,17 @@
 
     <div id="fps" class="fps-counter" hidden aria-live="polite">0 FPS</div>
 
+    <!-- Floating Navier-Stokes Equation -->
+    <div class="floating-equation" aria-hidden="true">
+        <span class="eq-part">∂<span class="eq-var">u</span>/∂t</span>
+        <span class="eq-op">+</span>
+        <span class="eq-part">(<span class="eq-var">u</span>·∇)<span class="eq-var">u</span></span>
+        <span class="eq-op">=</span>
+        <span class="eq-part">−∇p</span>
+        <span class="eq-op">+</span>
+        <span class="eq-part">ν∇²<span class="eq-var">u</span></span>
+    </div>
+
     <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -757,3 +757,81 @@ body {
   transform: translateZ(0);
   will-change: transform;
 }
+
+/* --------------------------------------------
+   14. Floating Navier-Stokes Equation
+   -------------------------------------------- */
+.floating-equation {
+  position: fixed;
+  z-index: var(--z-base);
+  pointer-events: none;
+  user-select: none;
+
+  font-family: 'Times New Roman', 'Georgia', serif;
+  font-size: clamp(1.2rem, 3vw, 2rem);
+  font-style: italic;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+
+  color: rgba(255, 255, 255, 0.12);
+  text-shadow: 0 0 30px rgba(124, 58, 237, 0.3);
+
+  animation: float-drift 60s ease-in-out infinite;
+}
+
+.floating-equation .eq-var {
+  font-weight: bold;
+  color: rgba(0, 212, 255, 0.2);
+}
+
+.floating-equation .eq-op {
+  margin: 0 0.3em;
+  color: rgba(255, 255, 255, 0.08);
+}
+
+.floating-equation .eq-part {
+  display: inline-block;
+}
+
+@keyframes float-drift {
+  0% {
+    top: 70%;
+    left: -10%;
+    transform: rotate(-2deg) scale(1);
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  25% {
+    top: 20%;
+    left: 30%;
+    transform: rotate(1deg) scale(1.05);
+  }
+  50% {
+    top: 60%;
+    left: 70%;
+    transform: rotate(-1deg) scale(0.95);
+  }
+  75% {
+    top: 30%;
+    left: 40%;
+    transform: rotate(2deg) scale(1.02);
+  }
+  95% {
+    opacity: 1;
+  }
+  100% {
+    top: 80%;
+    left: 110%;
+    transform: rotate(-2deg) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: hide floating equation */
+@media (prefers-reduced-motion: reduce) {
+  .floating-equation {
+    display: none;
+  }
+}
