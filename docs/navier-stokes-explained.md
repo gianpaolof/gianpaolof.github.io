@@ -753,15 +753,179 @@ solver.step(dt);    // Physics (7 steps)
 solver.render();    // ← THIS draws to screen!
 ```
 
-### What Does render() Do?
+`render()` performs **4 passes** to create the final image:
 
-1. Takes the **dye** texture (1024×1024)
-2. Applies **shading** (3D oily effect)
-3. Applies **bloom** (glow)
-4. Applies **sunrays** (light rays)
-5. Draws to **canvas** (finally visible!)
+```
+dye → bloom → sunrays → display → SCREEN
+```
 
-### Complete Schema
+---
+
+### Pass 1: BLOOM (Glow Effect)
+
+Takes the **bright parts** of the dye and blurs them.
+
+```
+Original dye:               Bloom:
+┌─────────────────┐        ┌─────────────────┐
+│      ●          │   →    │    ░░●░░        │
+│    (red)        │        │   ░░░░░░░       │
+└─────────────────┘        └─────────────────┘
+                            (blurred, only bright parts)
+```
+
+How it works:
+1. **Prefilter**: extracts only pixels above a threshold
+2. **Blur**: repeatedly blurs (8 iterations)
+3. Result: luminous halo around bright colors
+
+---
+
+### Pass 2: SUNRAYS (Volumetric Light)
+
+Simulates light rays "shooting" from bright areas.
+
+```
+Original dye:               Sunrays:
+┌─────────────────┐        ┌─────────────────┐
+│      ●          │   →    │    ╲ │ ╱        │
+│                 │        │    ─ ● ─        │
+│                 │        │    ╱ │ ╲        │
+└─────────────────┘        └─────────────────┘
+                            (rays from center)
+```
+
+This is "volumetric light scattering" - simulates light passing through particles.
+
+---
+
+### Pass 3: DISPLAY (Final Composition)
+
+The `display.frag` shader combines everything:
+
+#### 3a. Read Base Color
+
+```glsl
+vec3 c = texture(u_texture, v_texCoord).rgb;  // Color from dye
+```
+
+#### 3b. SHADING (3D Oily Effect)
+
+Looks at neighboring pixels to create the illusion of depth:
+
+```glsl
+// Read neighboring colors
+vec3 lc = texture(...left...).rgb;
+vec3 rc = texture(...right...).rgb;
+vec3 tc = texture(...top...).rgb;
+vec3 bc = texture(...bottom...).rgb;
+
+// Calculate color "slope"
+float dx = length(rc) - length(lc);  // Right-left difference
+float dy = length(tc) - length(bc);  // Top-bottom difference
+
+// Create a "normal" as if it were a 3D surface
+vec3 n = normalize(vec3(dx, dy, length(texelSize)));
+
+// Apply light from above
+vec3 l = vec3(0.0, 0.0, 1.0);  // Frontal light
+float diffuse = dot(n, l);     // How illuminated it is
+c *= diffuse;                  // Darken/lighten
+```
+
+**Result**: where color changes rapidly looks like a "ridge", where it's uniform looks "flat".
+
+```
+Without shading:            With shading:
+┌─────────────────┐        ┌─────────────────┐
+│  █████████████  │   →    │  ▓█████████▓░   │
+│  (flat)         │        │  (3D, oily)     │
+└─────────────────┘        └─────────────────┘
+```
+
+#### 3c. Apply Sunrays
+
+```glsl
+float sunrays = texture(u_sunrays, v_texCoord).r;
+c *= sunrays;  // Multiply (darkens where there are no rays)
+```
+
+#### 3d. Add Bloom
+
+```glsl
+vec3 bloom = texture(u_bloom, v_texCoord).rgb;
+c += bloom * intensity;  // Add (adds glow)
+```
+
+#### 3e. Gamma Correction
+
+Converts from "linear" colors (mathematical) to "perceived" colors (human eye):
+
+```glsl
+c = pow(c, vec3(1/2.4));  // sRGB approximation
+```
+
+#### 3f. Dithering
+
+Adds microscopic noise to avoid "banding" (visible stripes in gradients):
+
+```glsl
+c += (noise - 0.5) / 255.0;  // ±0.5 levels, invisible
+```
+
+---
+
+### Pass 4: Draw to Canvas
+
+```javascript
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);  // Target = screen
+gl.viewport(0, 0, canvas.width, canvas.height);
+this._drawQuad();  // Draw fullscreen triangle
+```
+
+`null` as framebuffer means "draw directly to the screen"!
+
+---
+
+### Complete Rendering Pipeline
+
+```
+┌─────────────┐
+│  dye        │ (1024×1024, raw colors)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│  bloom      │ (blur bright parts)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│  sunrays    │ (volumetric light rays)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│  display.frag                       │
+│  ┌─────────────────────────────────┐│
+│  │ 1. Read dye                     ││
+│  │ 2. Apply shading (3D)           ││
+│  │ 3. Multiply × sunrays           ││
+│  │ 4. Add + bloom                  ││
+│  │ 5. Gamma correction             ││
+│  │ 6. Dithering                    ││
+│  └─────────────────────────────────┘│
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────┐
+│  CANVAS     │  ← YOU SEE IT!
+└─────────────┘
+```
+
+---
+
+### Physics vs Rendering Summary
 
 ```
 step() ─────────────────────────────────────────┐
@@ -775,7 +939,7 @@ step() ────────────────────────�
                       ↓
 render() ───────────────────────────────────────┐
 │                                               │
-│  dye → shading → bloom → sunrays → canvas     │
+│  bloom → sunrays → display.frag → canvas      │
 │                                               │
 └───────────────────────────────────────────────┘
                       ↓
