@@ -15,6 +15,25 @@ Visit the live demo at: https://gianpaolof.github.io
 - Interactive mouse/touch input
 - Configurable simulation parameters
 
+## How It Works
+
+The simulation initializes through 9 phases, from loading HTML to rendering the first frame:
+
+![Initialization Flow](docs/initialization-flow.png)
+
+### Navier-Stokes Equations
+
+The fluid dynamics are based on the incompressible Navier-Stokes equations:
+
+```
+∂u/∂t + (u·∇)u = −∇p + ν∇²u
+```
+
+Each frame, the simulation:
+1. **Curl & Vorticity**: Computes rotation and amplifies swirls
+2. **Pressure Projection**: Solves Poisson equation via Jacobi iteration
+3. **Advection**: Moves velocity and dye fields using semi-Lagrangian method
+
 ## Credits
 
 This project is heavily inspired by [Pavel Dobryakov's WebGL Fluid Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation).

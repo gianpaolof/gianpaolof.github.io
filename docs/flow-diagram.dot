@@ -1,0 +1,208 @@
+digraph FluidSimulationFlow {
+    // Graph settings - wider layout
+    rankdir=TB;
+    bgcolor="#0d1117";
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=10, style="filled,rounded", shape=box, margin="0.2,0.1"];
+    edge [fontname="Helvetica", fontsize=8, color="#8b949e", fontcolor="#8b949e"];
+    newrank=true;
+    splines=ortho;
+
+    // Title
+    labelloc="t";
+    label=<<font color="#58a6ff" point-size="16"><b>WebGL Fluid Simulation - Initialization Flow</b></font>>;
+
+    // =========================================================================
+    // ROW 1: Loading Phase
+    // =========================================================================
+
+    subgraph cluster_row1 {
+        label="";
+        style="invis";
+
+        // Phase 1: HTML Loading
+        subgraph cluster_phase1 {
+            label=<<font color="#7ee787"><b>Phase 1: HTML Loading</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            html_load [label="Browser loads\nindex.html", fillcolor="#1f6feb", fontcolor="white"];
+            parse_dom [label="Parse DOM\n+ Load CSS", fillcolor="#1f6feb", fontcolor="white"];
+            load_js [label="Load main.js\n(ES Module)", fillcolor="#1f6feb", fontcolor="white"];
+
+            html_load -> parse_dom -> load_js;
+        }
+
+        // Phase 2: JavaScript Init
+        subgraph cluster_phase2 {
+            label=<<font color="#7ee787"><b>Phase 2: JS Initialization</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            dom_ready [label="DOMContentLoaded", fillcolor="#8957e5", fontcolor="white"];
+            init_call [label="init()", fillcolor="#8957e5", fontcolor="white"];
+            detect_quality [label="detectQuality()\ndesktop/mobile", fillcolor="#8957e5", fontcolor="white"];
+            resize_canvas [label="resizeCanvas()", fillcolor="#8957e5", fontcolor="white"];
+
+            dom_ready -> init_call -> detect_quality -> resize_canvas;
+        }
+
+        // Phase 3: WebGL Setup
+        subgraph cluster_phase3 {
+            label=<<font color="#7ee787"><b>Phase 3: WebGL2 Setup</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            create_solver [label="new FluidSolver()", fillcolor="#da3633", fontcolor="white"];
+            create_gl [label="createContext()\nWebGL2", fillcolor="#da3633", fontcolor="white"];
+            get_ext [label="getExtensions()", fillcolor="#da3633", fontcolor="white"];
+            get_formats [label="getTextureFormats()\nRGBA16F, RG16F", fillcolor="#da3633", fontcolor="white"];
+
+            create_solver -> create_gl -> get_ext -> get_formats;
+        }
+    }
+
+    // =========================================================================
+    // ROW 2: Setup Phase
+    // =========================================================================
+
+    subgraph cluster_row2 {
+        label="";
+        style="invis";
+
+        // Phase 4: Shader Loading
+        subgraph cluster_phase4 {
+            label=<<font color="#7ee787"><b>Phase 4: Shader Compilation</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            load_shaders [label="loadShaders()\nfetch 20+ files", fillcolor="#f0883e", fontcolor="white"];
+            compile_shaders [label="compileShader()\nGLSL → GPU", fillcolor="#f0883e", fontcolor="white"];
+            create_programs [label="createPrograms()\nadvect, pressure,\ncurl, bloom...", fillcolor="#f0883e", fontcolor="white"];
+
+            load_shaders -> compile_shaders -> create_programs;
+        }
+
+        // Phase 5: FBO Creation
+        subgraph cluster_phase5 {
+            label=<<font color="#7ee787"><b>Phase 5: Framebuffers (FBOs)</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            create_fbos [label="_createFBOs()", fillcolor="#a371f7", fontcolor="white"];
+            fbo_list [label="velocity 128×128\npressure 128×128\ndye 1024×1024\ndivergence, curl", fillcolor="#3d1f5c", fontcolor="#d2a8ff"];
+            clear_fbos [label="_clearFBO()\nInit to zero", fillcolor="#a371f7", fontcolor="white"];
+
+            create_fbos -> fbo_list -> clear_fbos;
+        }
+
+        // Phase 6: Initial Splats
+        subgraph cluster_phase6 {
+            label=<<font color="#7ee787"><b>Phase 6: Initial Splats</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            add_splats [label="_addInitialSplats()\n5-25 random", fillcolor="#238636", fontcolor="white"];
+            splat_data [label="Random position\nRandom velocity\nRandom HSV color", fillcolor="#1a4021", fontcolor="#7ee787"];
+            inject [label="Inject force\n+ dye to FBOs", fillcolor="#238636", fontcolor="white"];
+
+            add_splats -> splat_data -> inject;
+        }
+    }
+
+    // =========================================================================
+    // ROW 3: Runtime Phase
+    // =========================================================================
+
+    subgraph cluster_row3 {
+        label="";
+        style="invis";
+
+        // Phase 7: Animation Loop
+        subgraph cluster_phase7 {
+            label=<<font color="#7ee787"><b>Phase 7: Animation Loop</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            start_loop [label="requestAnimationFrame()\nanimate()", fillcolor="#0969da", fontcolor="white"];
+            calc_dt [label="Calculate dt\n~16.67ms", fillcolor="#0969da", fontcolor="white"];
+            get_input [label="getForces()\ngetDyes()", fillcolor="#0969da", fontcolor="white"];
+
+            start_loop -> calc_dt -> get_input;
+        }
+
+        // Phase 8: Physics Step
+        subgraph cluster_phase8 {
+            label=<<font color="#7ee787"><b>Phase 8: Navier-Stokes Physics</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            step_start [label="simulation.step(dt)", fillcolor="#bf4b8a", fontcolor="white"];
+            physics_steps [label="1. Curl (rotation)\n2. Vorticity (swirls)\n3. Divergence (∇·u)\n4. Pressure (Jacobi)\n5. Gradient (u-∇p)\n6. Advect velocity\n7. Advect dye", fillcolor="#5e1f3d", fontcolor="#ffb3d9"];
+
+            step_start -> physics_steps;
+        }
+
+        // Phase 9: Rendering
+        subgraph cluster_phase9 {
+            label=<<font color="#7ee787"><b>Phase 9: Rendering</b></font>>;
+            style="rounded";
+            color="#238636";
+            bgcolor="#161b22";
+
+            render_start [label="solver.render()", fillcolor="#f85149", fontcolor="white"];
+            effects [label="Shading (3D)\nBloom (glow)\nSunrays (light)", fillcolor="#5c1f1a", fontcolor="#ffa198"];
+            render_display [label="Display to canvas", fillcolor="#f85149", fontcolor="white"];
+
+            render_start -> effects -> render_display;
+        }
+    }
+
+    // Final nodes
+    first_frame [label="✨ FIRST FRAME VISIBLE ✨", fillcolor="#1f6feb", fontcolor="white", shape=ellipse, style="filled,bold"];
+    loop_back [label="Loop 60×/sec", fillcolor="#21262d", fontcolor="#8b949e", shape=ellipse, style="filled,dashed"];
+
+    // =========================================================================
+    // CONNECTIONS BETWEEN PHASES
+    // =========================================================================
+
+    // Row 1 connections
+    load_js -> dom_ready [constraint=true];
+    resize_canvas -> create_solver [constraint=true];
+
+    // Row 1 to Row 2
+    get_formats -> load_shaders [constraint=true];
+
+    // Row 2 connections
+    create_programs -> create_fbos [constraint=true];
+    clear_fbos -> add_splats [constraint=true];
+
+    // Row 2 to Row 3
+    inject -> start_loop [constraint=true, label="  init done  "];
+
+    // Row 3 connections
+    get_input -> step_start [constraint=true];
+    physics_steps -> render_start [constraint=true];
+
+    // Final
+    render_display -> first_frame [constraint=true];
+    first_frame -> loop_back [constraint=true];
+    loop_back -> start_loop [constraint=false, style=dashed];
+
+    // =========================================================================
+    // FORCE SAME RANK (horizontal alignment)
+    // =========================================================================
+
+    {rank=same; html_load; dom_ready; create_solver;}
+    {rank=same; load_shaders; create_fbos; add_splats;}
+    {rank=same; start_loop; step_start; render_start;}
+    {rank=same; first_frame; loop_back;}
+}
