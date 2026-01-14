@@ -200,6 +200,50 @@
             </div>
         </div>
 
+        <!-- Advanced Physics Section -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                Advanced Physics
+            </div>
+
+            <div class="glass-control">
+                <label>Jacobi Iterations</label>
+                <input type="range" id="param-pressureIterations" class="glass-slider" min="1" max="100" step="1" value="20">
+                <span class="glass-value" id="value-pressureIterations">20</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Splat Force</label>
+                <input type="range" id="param-splatForce" class="glass-slider" min="100" max="20000" step="100" value="6000">
+                <span class="glass-value" id="value-splatForce">6000</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Dye Resolution</label>
+                <select id="param-dyeSize" class="glass-select">
+                    <option value="256">256 (Fast)</option>
+                    <option value="512">512</option>
+                    <option value="1024" selected>1024 (Default)</option>
+                    <option value="2048">2048 (HD)</option>
+                </select>
+            </div>
+
+            <div class="glass-control">
+                <label>Bloom Blur Passes</label>
+                <input type="range" id="param-bloomIterations" class="glass-slider" min="1" max="16" step="1" value="8">
+                <span class="glass-value" id="value-bloomIterations">8</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Sunrays Quality</label>
+                <input type="range" id="param-sunraysResolution" class="glass-slider" min="64" max="512" step="32" value="196">
+                <span class="glass-value" id="value-sunraysResolution">196</span>
+            </div>
+        </div>
+
         <!-- Actions -->
         <div class="glass-actions">
             <button class="glass-btn primary" id="random-splats-btn">

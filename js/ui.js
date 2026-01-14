@@ -157,6 +157,33 @@ class AdvancedControlPanel {
                 type: 'range',
                 min: 0.3, max: 1, step: 0.1, decimals: 1,
                 configKey: 'sunraysWeight'
+            },
+            // Advanced Physics
+            pressureIterations: {
+                type: 'range',
+                min: 1, max: 100, step: 1, decimals: 0,
+                configKey: 'pressureIterations'
+            },
+            splatForce: {
+                type: 'range',
+                min: 100, max: 20000, step: 100, decimals: 0,
+                configKey: 'splatForce'
+            },
+            dyeSize: {
+                type: 'select',
+                options: [256, 512, 1024, 2048],
+                configKey: 'dyeSize',
+                requiresResize: true  // Needs FBO recreation
+            },
+            bloomIterations: {
+                type: 'range',
+                min: 1, max: 16, step: 1, decimals: 0,
+                configKey: 'bloomIterations'
+            },
+            sunraysResolution: {
+                type: 'range',
+                min: 64, max: 512, step: 32, decimals: 0,
+                configKey: 'sunraysResolution'
             }
         };
 

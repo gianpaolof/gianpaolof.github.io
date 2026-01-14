@@ -120,7 +120,9 @@ export function clampConfigValue(key, value) {
         splatForce: [100, 20000],
         bloomIntensity: [0.0, 3.0],
         bloomThreshold: [0.0, 1.0],
-        sunraysWeight: [0.0, 3.0]
+        bloomIterations: [1, 16],
+        sunraysWeight: [0.0, 3.0],
+        sunraysResolution: [64, 512]
     };
 
     if (ranges[key]) {
