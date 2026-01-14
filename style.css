@@ -1541,6 +1541,36 @@ body {
   background: var(--color-text);
 }
 
+/* Glass Presets */
+.glass-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.glass-presets .glass-btn.preset {
+  flex: 1;
+  min-width: 80px;
+  font-size: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.glass-presets .glass-btn.preset:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.glass-presets .glass-btn.preset:active {
+  transform: translateY(0);
+}
+
 /* Glass Buttons */
 .glass-actions {
   display: flex;

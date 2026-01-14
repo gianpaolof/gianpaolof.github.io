@@ -75,6 +75,43 @@ class UIManager {
 /**
  * AdvancedControlPanel - Pavel-style control panel with all parameters
  */
+// Simulation presets
+const PRESETS = {
+    smooth: {
+        name: 'Smooth',
+        curl: 15,
+        velocityDissipation: 0.3,
+        dyeDissipation: 1.5,
+        pressure: 0.8,
+        pressureIterations: 20,
+        splatForce: 5000,
+        gridSize: 128,
+        dyeSize: 1024
+    },
+    turbulent: {
+        name: 'Turbulent',
+        curl: 45,
+        velocityDissipation: 0.1,
+        dyeDissipation: 0.6,
+        pressure: 0.8,
+        pressureIterations: 25,
+        splatForce: 6000,
+        gridSize: 256,
+        dyeSize: 2048
+    },
+    explosive: {
+        name: 'Explosive',
+        curl: 35,
+        velocityDissipation: 0.05,
+        dyeDissipation: 0.4,
+        pressure: 0.9,
+        pressureIterations: 30,
+        splatForce: 15000,
+        gridSize: 128,
+        dyeSize: 1024
+    }
+};
+
 class AdvancedControlPanel {
     constructor(solver, defaultConfig) {
         this.solver = solver;
@@ -228,6 +265,11 @@ class AdvancedControlPanel {
         if (this.closeBtn) {
             this.closeBtn.addEventListener('click', () => this.close());
         }
+
+        // Preset buttons
+        document.getElementById('preset-smooth')?.addEventListener('click', () => this.applyPreset('smooth'));
+        document.getElementById('preset-turbulent')?.addEventListener('click', () => this.applyPreset('turbulent'));
+        document.getElementById('preset-explosive')?.addEventListener('click', () => this.applyPreset('explosive'));
 
         // Collapsible sections
         document.querySelectorAll('.section-title.clickable').forEach(title => {
@@ -451,6 +493,55 @@ class AdvancedControlPanel {
             }
         }
         return result;
+    }
+
+    /**
+     * Apply a preset configuration
+     * @param {string} presetName - Name of the preset (smooth, turbulent, explosive)
+     */
+    applyPreset(presetName) {
+        const preset = PRESETS[presetName];
+        if (!preset) {
+            console.warn(`Preset not found: ${presetName}`);
+            return;
+        }
+
+        // Apply preset values to solver
+        const configUpdate = {};
+        for (const [key, value] of Object.entries(preset)) {
+            if (key !== 'name') {
+                configUpdate[key] = value;
+            }
+        }
+        this.solver.setConfig(configUpdate);
+
+        // Update UI controls to reflect new values
+        for (const [key, value] of Object.entries(preset)) {
+            if (key === 'name') continue;
+
+            const paramDef = this.params[key];
+            if (!paramDef) continue;
+
+            const element = document.getElementById(`param-${key}`);
+            const valueDisplay = document.getElementById(`value-${key}`);
+
+            if (!element) continue;
+
+            if (paramDef.type === 'select') {
+                element.value = String(value);
+            } else if (paramDef.type === 'range') {
+                let displayValue = value;
+                if (paramDef.inverseTransform) {
+                    displayValue = paramDef.inverseTransform(value);
+                }
+                element.value = displayValue;
+                if (valueDisplay) {
+                    valueDisplay.textContent = displayValue.toFixed(paramDef.decimals);
+                }
+            } else if (paramDef.type === 'checkbox') {
+                element.checked = value;
+            }
+        }
     }
 }
 
