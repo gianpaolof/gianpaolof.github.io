@@ -97,6 +97,7 @@ export class FluidSolver {
 
         // Effects renderer (initialized after programs are created)
         this._effects = null;
+
     }
 
     /**

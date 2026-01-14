@@ -59,6 +59,7 @@ export const DEFAULT_CONFIG = {
     hurricaneSpiralTightness: 2.5,  // How tightly wound (higher = tighter)
     hurricaneSpiralArmWidth: 0.4,   // Width of spiral arms
     hurricaneSpiralNoise: 0.3,      // Cloud noise intensity (0-1)
+    hurricaneSpiralWarp: 0.5,       // Domain warping intensity (0-1)
 
     // Splat settings (for user interaction)
     splatRadius: 0.0025,        // Radius of color/force injection
@@ -149,7 +150,8 @@ export function clampConfigValue(key, value) {
         hurricaneSpiralArms: [2, 12],
         hurricaneSpiralTightness: [0.5, 5.0],
         hurricaneSpiralArmWidth: [0.1, 1.0],
-        hurricaneSpiralNoise: [0.0, 1.0]
+        hurricaneSpiralNoise: [0.0, 1.0],
+        hurricaneSpiralWarp: [0.0, 1.0]
     };
 
     if (ranges[key]) {

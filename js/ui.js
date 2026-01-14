@@ -134,7 +134,8 @@ const PRESETS = {
         hurricaneSpiralArms: 5,
         hurricaneSpiralTightness: 2.5,
         hurricaneSpiralArmWidth: 0.4,
-        hurricaneSpiralNoise: 0.3
+        hurricaneSpiralNoise: 0.3,
+        hurricaneSpiralWarp: 0.5
     },
     cyclone: {
         name: 'Cyclone (Southern)',
@@ -157,7 +158,8 @@ const PRESETS = {
         hurricaneSpiralArms: 6,
         hurricaneSpiralTightness: 2.2,
         hurricaneSpiralArmWidth: 0.35,
-        hurricaneSpiralNoise: 0.35
+        hurricaneSpiralNoise: 0.35,
+        hurricaneSpiralWarp: 0.6
     }
 };
 
@@ -326,6 +328,11 @@ class AdvancedControlPanel {
                 type: 'range',
                 min: 0, max: 1, step: 0.05, decimals: 2,
                 configKey: 'hurricaneSpiralNoise'
+            },
+            hurricaneSpiralWarp: {
+                type: 'range',
+                min: 0, max: 1, step: 0.05, decimals: 2,
+                configKey: 'hurricaneSpiralWarp'
             }
         };
 

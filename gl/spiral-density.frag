@@ -2,11 +2,11 @@
 precision highp float;
 
 /**
- * Spiral Density Shader
+ * Spiral Density Shader with Domain Warping
  *
  * Generates procedural spiral arm density for hurricane visualization.
- * Uses logarithmic spiral mathematics to create realistic hurricane band patterns.
- * This texture is composited with the dye field in the display shader.
+ * Uses logarithmic spiral mathematics with domain warping for organic,
+ * churning atmospheric effects that mimic real satellite imagery.
  */
 
 uniform vec2 u_center;           // Hurricane center (normalized 0-1)
@@ -19,6 +19,7 @@ uniform float u_rotation;        // Rotation direction (1 CCW, -1 CW)
 uniform float u_aspectRatio;     // Canvas aspect ratio
 uniform float u_armWidth;        // Width of spiral arms
 uniform float u_noiseStrength;   // Cloud noise intensity
+uniform float u_warpStrength;    // Domain warping intensity (0-1)
 
 in vec2 v_texCoord;
 out vec4 fragColor;
@@ -32,13 +33,13 @@ float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
-// 2D noise
+// Smooth 2D noise
 float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
 
-    // Smooth interpolation
-    vec2 u = f * f * (3.0 - 2.0 * f);
+    // Quintic interpolation for smoother results
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
     // Four corners
     float a = hash(i + vec2(0.0, 0.0));
@@ -54,15 +55,53 @@ float fbm(vec2 p, int octaves) {
     float value = 0.0;
     float amplitude = 0.5;
     float frequency = 1.0;
+    float maxValue = 0.0;
 
     for (int i = 0; i < 6; i++) {
         if (i >= octaves) break;
         value += amplitude * noise(p * frequency);
+        maxValue += amplitude;
         frequency *= 2.0;
         amplitude *= 0.5;
     }
 
-    return value;
+    return value / maxValue;  // Normalize to 0-1
+}
+
+// ============================================================================
+// DOMAIN WARPING
+// ============================================================================
+
+/**
+ * Multi-layer domain warping for organic atmospheric turbulence.
+ * Creates the "churning" effect seen in real hurricane satellite imagery.
+ */
+vec2 domainWarp(vec2 pos, float strength) {
+    // Base warp - large scale atmospheric movement
+    float time1 = u_time * 0.015;
+    vec2 warp1 = vec2(
+        fbm(pos * 2.0 + vec2(0.0, time1), 4),
+        fbm(pos * 2.0 + vec2(5.2, 1.3) + time1, 4)
+    ) - 0.5;  // Center around zero
+
+    // Secondary warp - medium scale turbulence
+    float time2 = u_time * 0.025;
+    vec2 warp2 = vec2(
+        fbm(pos * 4.0 + warp1 * 0.5 + vec2(1.7, 9.2) + time2, 3),
+        fbm(pos * 4.0 + warp1 * 0.5 + vec2(8.3, 2.8) + time2, 3)
+    ) - 0.5;
+
+    // Tertiary warp - fine detail churning
+    float time3 = u_time * 0.04;
+    vec2 warp3 = vec2(
+        fbm(pos * 8.0 + warp2 * 0.3 + time3, 2),
+        fbm(pos * 8.0 + warp2 * 0.3 + vec2(3.1, 7.4) + time3, 2)
+    ) - 0.5;
+
+    // Combine warps with decreasing influence
+    vec2 totalWarp = warp1 * 0.06 + warp2 * 0.03 + warp3 * 0.015;
+
+    return pos + totalWarp * strength;
 }
 
 // ============================================================================
@@ -72,11 +111,9 @@ float fbm(vec2 p, int octaves) {
 /**
  * Computes density contribution from spiral arms.
  * Uses logarithmic spiral: r = a * e^(b * theta)
- * Inverse: theta_spiral = log(r/a) / b
  */
-float spiralArmDensity(vec2 pos, float r, float theta) {
+float spiralArmDensity(float r, float theta) {
     // Logarithmic spiral coordinate
-    // The "expected" angle for a point at distance r on the spiral
     float spiralPhase = theta - u_tightness * log(max(r / (u_eyeRadius * 0.5), 0.01));
 
     // Add rotation animation
@@ -94,13 +131,13 @@ float spiralArmDensity(vec2 pos, float r, float theta) {
 }
 
 /**
- * Computes secondary rainbands (thinner, more numerous)
+ * Secondary rainbands (thinner, more numerous)
  */
-float secondaryBands(vec2 pos, float r, float theta) {
+float secondaryBands(float r, float theta) {
     float spiralPhase = theta - u_tightness * 0.7 * log(max(r / (u_eyeRadius * 0.3), 0.01));
-    spiralPhase += u_time * 0.25 * u_rotation + 0.5;  // Offset from primary
+    spiralPhase += u_time * 0.25 * u_rotation + 0.5;
 
-    float armSpacing = 6.28318 / (u_numArms * 2.0);  // More bands
+    float armSpacing = 6.28318 / (u_numArms * 2.0);
     float toNearestArm = mod(spiralPhase + armSpacing * 0.5, armSpacing) - armSpacing * 0.5;
 
     float bandWidth = u_armWidth * 0.5;
@@ -116,14 +153,29 @@ void main() {
     vec2 pos = v_texCoord - u_center;
     pos.x *= u_aspectRatio;
 
-    float r = length(pos);
-    float theta = atan(pos.y, pos.x);
+    // Original radius for boundary checks (before warping)
+    float originalR = length(pos);
 
     // Outside maximum radius: no density
-    if (r > u_maxRadius) {
-        fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+    if (originalR > u_maxRadius * 1.2) {
+        fragColor = vec4(0.0);
         return;
     }
+
+    // =========================================================================
+    // DOMAIN WARPING - Creates organic atmospheric churning
+    // =========================================================================
+
+    // Apply domain warping with distance-based falloff
+    // Less warping near eye (more stable), more in outer bands
+    float warpFalloff = smoothstep(u_eyeRadius * 0.8, u_eyeRadius * 2.0, originalR);
+    warpFalloff *= smoothstep(u_maxRadius, u_maxRadius * 0.7, originalR);
+
+    vec2 warpedPos = domainWarp(pos, u_warpStrength * warpFalloff);
+
+    // Calculate warped polar coordinates
+    float r = length(warpedPos);
+    float theta = atan(warpedPos.y, warpedPos.x);
 
     // =========================================================================
     // RADIAL STRUCTURE
@@ -136,32 +188,24 @@ void main() {
     float eyeWallDist = abs(r - u_eyeRadius * 1.2);
     float eyeWall = exp(-eyeWallDist * eyeWallDist / 0.003) * 1.5;
 
-    // Outer falloff
-    float outerFade = 1.0 - smoothstep(u_maxRadius * 0.6, u_maxRadius, r);
+    // Outer falloff (use original radius for clean boundary)
+    float outerFade = 1.0 - smoothstep(u_maxRadius * 0.6, u_maxRadius, originalR);
 
     // =========================================================================
-    // SPIRAL ARM STRUCTURE
+    // SPIRAL ARM STRUCTURE (using warped coordinates)
     // =========================================================================
 
-    // Primary spiral arms
-    float primaryArms = spiralArmDensity(pos, r, theta);
-
-    // Secondary bands
-    float secondary = secondaryBands(pos, r, theta);
+    float primaryArms = spiralArmDensity(r, theta);
+    float secondary = secondaryBands(r, theta);
 
     // =========================================================================
-    // CLOUD TEXTURE
+    // CLOUD TEXTURE OVERLAY
     // =========================================================================
 
-    // Domain warped noise for organic cloud look
-    vec2 noiseCoord = pos * 8.0;
-    noiseCoord += vec2(
-        fbm(pos * 3.0 + u_time * 0.02, 3),
-        fbm(pos * 3.0 + vec2(5.2, 1.3) + u_time * 0.02, 3)
-    ) * 0.5;
-
-    float clouds = fbm(noiseCoord + u_time * 0.03, 5);
-    clouds = clouds * 0.5 + 0.5;  // Remap to 0-1
+    // Additional fine-detail cloud noise
+    vec2 cloudCoord = warpedPos * 12.0 + u_time * 0.02;
+    float clouds = fbm(cloudCoord, 4);
+    clouds = clouds * 0.6 + 0.4;  // Remap to 0.4-1.0
 
     // =========================================================================
     // COMBINE ALL COMPONENTS
@@ -179,18 +223,18 @@ void main() {
     density += secondary * eyeFade;
 
     // Base cloud layer (fills in between arms)
-    density += 0.15 * eyeFade;
+    density += 0.12 * eyeFade;
 
     // Apply outer falloff
     density *= outerFade;
 
     // Modulate with cloud texture for organic look
-    density *= (1.0 - u_noiseStrength) + u_noiseStrength * clouds;
+    float noiseMix = (1.0 - u_noiseStrength) + u_noiseStrength * clouds;
+    density *= noiseMix;
 
     // Clamp final density
     density = clamp(density, 0.0, 1.0);
 
-    // Output density in red channel (single channel output)
-    // Alpha channel also carries density for blending
+    // Output density
     fragColor = vec4(density, density, density, density);
 }

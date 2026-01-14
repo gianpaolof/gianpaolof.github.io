@@ -592,6 +592,7 @@ export class FluidSimulation {
         gl.uniform1f(program.uniforms.u_tightness, config.hurricaneSpiralTightness);
         gl.uniform1f(program.uniforms.u_armWidth, config.hurricaneSpiralArmWidth);
         gl.uniform1f(program.uniforms.u_noiseStrength, config.hurricaneSpiralNoise);
+        gl.uniform1f(program.uniforms.u_warpStrength, config.hurricaneSpiralWarp);
 
         // Animation and display
         gl.uniform1f(program.uniforms.u_time, this._time);
