@@ -43,6 +43,16 @@ export const DEFAULT_CONFIG = {
     // Vorticity confinement
     curl: 30,                   // Vorticity strength (creates swirls)
 
+    // Hurricane spiral effect
+    hurricaneEnabled: false,    // Enable hurricane spiral pattern
+    hurricaneStrength: 1.0,     // Maximum tangential velocity
+    hurricaneEyeRadius: 0.025,  // Eye radius (calm center)
+    hurricaneMaxRadius: 0.4,    // Maximum influence radius
+    hurricaneExpansion: 0.15,   // Radial expansion (spiral arms)
+    hurricaneRotation: 1,       // 1 = CCW (Northern), -1 = CW (Southern)
+    hurricaneCenterX: 0.5,      // Center X position
+    hurricaneCenterY: 0.5,      // Center Y position
+
     // Splat settings (for user interaction)
     splatRadius: 0.0025,        // Radius of color/force injection
     splatForce: 6000,           // Force magnitude when injecting
@@ -122,7 +132,12 @@ export function clampConfigValue(key, value) {
         bloomThreshold: [0.0, 1.0],
         bloomIterations: [1, 16],
         sunraysWeight: [0.0, 3.0],
-        sunraysResolution: [64, 512]
+        sunraysResolution: [64, 512],
+        // Hurricane
+        hurricaneStrength: [0.0, 3.0],
+        hurricaneEyeRadius: [0.01, 0.15],
+        hurricaneMaxRadius: [0.1, 0.8],
+        hurricaneExpansion: [0.0, 0.5]
     };
 
     if (ranges[key]) {

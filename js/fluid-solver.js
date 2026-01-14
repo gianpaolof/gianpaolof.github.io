@@ -140,7 +140,8 @@ export class FluidSolver {
             curl: this._programs.curl,
             vorticity: this._programs.vorticity,
             splat: this._programs.splat,
-            clear: this._programs.clear
+            clear: this._programs.clear,
+            hurricane: this._programs.hurricane
         }, this._fbos, this.config);
 
         // Create VAO for attribute-less rendering
@@ -300,6 +301,9 @@ export class FluidSolver {
         // Sunrays programs - Pavel's volumetric light effect
         this._programs.sunraysMask = createProgram(gl, s.quadVert, s.sunraysMaskFrag);
         this._programs.sunrays = createProgram(gl, s.quadVert, s.sunraysFrag);
+
+        // Hurricane spiral shader
+        this._programs.hurricane = createProgram(gl, s.quadVert, s.hurricaneFrag);
     }
 
     /**

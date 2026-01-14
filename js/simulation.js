@@ -164,6 +164,15 @@ export class FluidSimulation {
         }
 
         // =====================================================================
+        // STEP 4.5: Apply hurricane spiral (Rankine vortex)
+        // Generates cyclonic flow pattern from center outward.
+        // Applied after vorticity so hurricane curl contributes to divergence.
+        // =====================================================================
+        if (config.hurricaneEnabled) {
+            this._applyHurricane(aspectRatio, drawQuad);
+        }
+
+        // =====================================================================
         // STEP 5: Compute divergence
         // div(u) = ∂u/∂x + ∂v/∂y
         // This measures how much fluid is "created" or "destroyed" at each point.
@@ -480,6 +489,60 @@ export class FluidSimulation {
         gl.uniform1f(program.uniforms.u_curlStrength, this._config.curl);
         gl.uniform1f(program.uniforms.u_dt, dt);
 
+        this._fbos.velocity.bindWrite();
+        drawQuad();
+        this._fbos.velocity.swap();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    // =========================================================================
+    // HURRICANE SPIRAL (RANKINE VORTEX)
+    // =========================================================================
+
+    /**
+     * Applies hurricane spiral velocity field using Rankine vortex model.
+     *
+     * The Rankine vortex has two regions:
+     * - Inner core (r < R_max): Solid body rotation (V ∝ r)
+     * - Outer region (r > R_max): Irrotational vortex (V ∝ 1/r)
+     *
+     * A radial expansion component creates the characteristic spiral arms.
+     *
+     * @private
+     * @param {number} aspectRatio - Canvas aspect ratio
+     * @param {Function} drawQuad - Quad drawing function
+     */
+    _applyHurricane(aspectRatio, drawQuad) {
+        const gl = this._gl;
+        const program = this._programs.hurricane;
+        const config = this._config;
+
+        program.use();
+
+        // Bind velocity texture
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this._fbos.velocity.texture);
+        gl.uniform1i(program.uniforms.u_velocity, 0);
+
+        // Hurricane parameters
+        gl.uniform2f(program.uniforms.u_center,
+            config.hurricaneCenterX,
+            config.hurricaneCenterY
+        );
+        gl.uniform1f(program.uniforms.u_eyeRadius, config.hurricaneEyeRadius);
+        gl.uniform1f(program.uniforms.u_maxRadius, config.hurricaneMaxRadius);
+        gl.uniform1f(program.uniforms.u_strength, config.hurricaneStrength);
+        gl.uniform1f(program.uniforms.u_expansion, config.hurricaneExpansion);
+        gl.uniform1f(program.uniforms.u_rotation, config.hurricaneRotation);
+        gl.uniform1f(program.uniforms.u_aspectRatio, aspectRatio);
+        gl.uniform1f(program.uniforms.u_blend, 1.0);
+
+        // Texel size for velocity scaling
+        const texelSize = 1.0 / config.gridSize;
+        gl.uniform2f(program.uniforms.u_texelSize, texelSize, texelSize);
+
+        // Apply hurricane to velocity field
         this._fbos.velocity.bindWrite();
         drawQuad();
         this._fbos.velocity.swap();

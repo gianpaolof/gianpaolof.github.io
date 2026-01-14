@@ -200,6 +200,57 @@
             </div>
         </div>
 
+        <!-- Hurricane Section -->
+        <div class="glass-section">
+            <div class="glass-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.5 0 1-.05 1.5-.1"/>
+                    <path d="M12 12c-2-2-3-4-3-6s1-4 3-4c2 0 3 2 3 4s-1 4-3 6c2 2 3 4 3 6s-1 4-3 4"/>
+                </svg>
+                Hurricane
+            </div>
+
+            <div class="glass-control toggle">
+                <label>Enable Hurricane</label>
+                <label class="glass-toggle">
+                    <input type="checkbox" id="param-hurricaneEnabled">
+                    <span class="glass-toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="glass-control">
+                <label>Strength</label>
+                <input type="range" id="param-hurricaneStrength" class="glass-slider" min="0.1" max="3" step="0.1" value="1">
+                <span class="glass-value" id="value-hurricaneStrength">1.0</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Eye Radius</label>
+                <input type="range" id="param-hurricaneEyeRadius" class="glass-slider" min="0.01" max="0.15" step="0.005" value="0.025">
+                <span class="glass-value" id="value-hurricaneEyeRadius">0.025</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Max Radius</label>
+                <input type="range" id="param-hurricaneMaxRadius" class="glass-slider" min="0.1" max="0.8" step="0.05" value="0.4">
+                <span class="glass-value" id="value-hurricaneMaxRadius">0.40</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Expansion</label>
+                <input type="range" id="param-hurricaneExpansion" class="glass-slider" min="0" max="0.5" step="0.05" value="0.15">
+                <span class="glass-value" id="value-hurricaneExpansion">0.15</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Rotation</label>
+                <select id="param-hurricaneRotation" class="glass-select">
+                    <option value="1" selected>CCW (Northern)</option>
+                    <option value="-1">CW (Southern)</option>
+                </select>
+            </div>
+        </div>
+
         <!-- Advanced Physics Section -->
         <div class="glass-section">
             <div class="glass-section-title">
@@ -265,6 +316,12 @@
                 </button>
                 <button class="glass-btn preset" id="preset-explosive" title="High energy, fast movement">
                     💥 Explosive
+                </button>
+                <button class="glass-btn preset" id="preset-hurricane" title="Cyclonic hurricane spiral">
+                    🌀 Hurricane
+                </button>
+                <button class="glass-btn preset" id="preset-cyclone" title="Southern hemisphere cyclone">
+                    🌪️ Cyclone
                 </button>
             </div>
         </div>

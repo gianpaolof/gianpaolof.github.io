@@ -98,6 +98,9 @@ export const SHADER_PATHS = {
     splatFrag: './gl/splat.frag',
     copyFrag: './gl/copy.frag',
 
+    // Hurricane shader
+    hurricaneFrag: './gl/hurricane.frag',
+
     // Display and effects shaders
     displayFrag: './gl/display.frag',
     bloomPrefilterFrag: './gl/bloom-prefilter.frag',

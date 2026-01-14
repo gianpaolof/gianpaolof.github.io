@@ -86,7 +86,8 @@ const PRESETS = {
         pressureIterations: 20,
         splatForce: 5000,
         gridSize: 128,
-        dyeSize: 1024
+        dyeSize: 1024,
+        hurricaneEnabled: false
     },
     turbulent: {
         name: 'Turbulent',
@@ -97,7 +98,8 @@ const PRESETS = {
         pressureIterations: 25,
         splatForce: 6000,
         gridSize: 256,
-        dyeSize: 2048
+        dyeSize: 2048,
+        hurricaneEnabled: false
     },
     explosive: {
         name: 'Explosive',
@@ -108,7 +110,42 @@ const PRESETS = {
         pressureIterations: 30,
         splatForce: 15000,
         gridSize: 128,
-        dyeSize: 1024
+        dyeSize: 1024,
+        hurricaneEnabled: false
+    },
+    hurricane: {
+        name: 'Hurricane',
+        curl: 50,
+        velocityDissipation: 0.05,
+        dyeDissipation: 0.3,
+        pressure: 0.8,
+        pressureIterations: 25,
+        splatForce: 6000,
+        gridSize: 128,
+        dyeSize: 1024,
+        hurricaneEnabled: true,
+        hurricaneStrength: 1.0,
+        hurricaneEyeRadius: 0.025,
+        hurricaneMaxRadius: 0.4,
+        hurricaneExpansion: 0.15,
+        hurricaneRotation: 1
+    },
+    cyclone: {
+        name: 'Cyclone (Southern)',
+        curl: 50,
+        velocityDissipation: 0.05,
+        dyeDissipation: 0.3,
+        pressure: 0.8,
+        pressureIterations: 25,
+        splatForce: 6000,
+        gridSize: 128,
+        dyeSize: 1024,
+        hurricaneEnabled: true,
+        hurricaneStrength: 1.2,
+        hurricaneEyeRadius: 0.02,
+        hurricaneMaxRadius: 0.45,
+        hurricaneExpansion: 0.2,
+        hurricaneRotation: -1
     }
 };
 
@@ -221,6 +258,37 @@ class AdvancedControlPanel {
                 type: 'range',
                 min: 64, max: 512, step: 32, decimals: 0,
                 configKey: 'sunraysResolution'
+            },
+            // Hurricane
+            hurricaneEnabled: {
+                type: 'checkbox',
+                configKey: 'hurricaneEnabled'
+            },
+            hurricaneStrength: {
+                type: 'range',
+                min: 0.1, max: 3, step: 0.1, decimals: 1,
+                configKey: 'hurricaneStrength'
+            },
+            hurricaneEyeRadius: {
+                type: 'range',
+                min: 0.01, max: 0.15, step: 0.005, decimals: 3,
+                configKey: 'hurricaneEyeRadius'
+            },
+            hurricaneMaxRadius: {
+                type: 'range',
+                min: 0.1, max: 0.8, step: 0.05, decimals: 2,
+                configKey: 'hurricaneMaxRadius'
+            },
+            hurricaneExpansion: {
+                type: 'range',
+                min: 0, max: 0.5, step: 0.05, decimals: 2,
+                configKey: 'hurricaneExpansion'
+            },
+            hurricaneRotation: {
+                type: 'select',
+                options: [1, -1],
+                labels: ['CCW (Northern)', 'CW (Southern)'],
+                configKey: 'hurricaneRotation'
             }
         };
 
@@ -270,6 +338,8 @@ class AdvancedControlPanel {
         document.getElementById('preset-smooth')?.addEventListener('click', () => this.applyPreset('smooth'));
         document.getElementById('preset-turbulent')?.addEventListener('click', () => this.applyPreset('turbulent'));
         document.getElementById('preset-explosive')?.addEventListener('click', () => this.applyPreset('explosive'));
+        document.getElementById('preset-hurricane')?.addEventListener('click', () => this.applyPreset('hurricane'));
+        document.getElementById('preset-cyclone')?.addEventListener('click', () => this.applyPreset('cyclone'));
 
         // Collapsible sections
         document.querySelectorAll('.section-title.clickable').forEach(title => {
