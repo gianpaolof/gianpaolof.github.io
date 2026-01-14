@@ -53,6 +53,13 @@ export const DEFAULT_CONFIG = {
     hurricaneCenterX: 0.5,      // Center X position
     hurricaneCenterY: 0.5,      // Center Y position
 
+    // Hurricane spiral density visualization
+    hurricaneSpiralDensity: true,   // Enable spiral arm density overlay
+    hurricaneSpiralArms: 5,         // Number of spiral arms
+    hurricaneSpiralTightness: 2.5,  // How tightly wound (higher = tighter)
+    hurricaneSpiralArmWidth: 0.4,   // Width of spiral arms
+    hurricaneSpiralNoise: 0.3,      // Cloud noise intensity (0-1)
+
     // Splat settings (for user interaction)
     splatRadius: 0.0025,        // Radius of color/force injection
     splatForce: 6000,           // Force magnitude when injecting
@@ -137,7 +144,12 @@ export function clampConfigValue(key, value) {
         hurricaneStrength: [0.0, 3.0],
         hurricaneEyeRadius: [0.01, 0.15],
         hurricaneMaxRadius: [0.1, 0.8],
-        hurricaneExpansion: [0.0, 0.5]
+        hurricaneExpansion: [0.0, 0.5],
+        // Hurricane spiral density
+        hurricaneSpiralArms: [2, 12],
+        hurricaneSpiralTightness: [0.5, 5.0],
+        hurricaneSpiralArmWidth: [0.1, 1.0],
+        hurricaneSpiralNoise: [0.0, 1.0]
     };
 
     if (ranges[key]) {

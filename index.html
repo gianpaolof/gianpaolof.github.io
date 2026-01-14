@@ -249,6 +249,43 @@
                     <option value="-1">CW (Southern)</option>
                 </select>
             </div>
+
+            <!-- Spiral Density Visualization -->
+            <div class="glass-subsection-title" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+                Spiral Arms
+            </div>
+
+            <div class="glass-control toggle">
+                <label>Show Spiral Arms</label>
+                <label class="glass-toggle">
+                    <input type="checkbox" id="param-hurricaneSpiralDensity" checked>
+                    <span class="glass-toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="glass-control">
+                <label>Number of Arms</label>
+                <input type="range" id="param-hurricaneSpiralArms" class="glass-slider" min="2" max="12" step="1" value="5">
+                <span class="glass-value" id="value-hurricaneSpiralArms">5</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Tightness</label>
+                <input type="range" id="param-hurricaneSpiralTightness" class="glass-slider" min="0.5" max="5" step="0.1" value="2.5">
+                <span class="glass-value" id="value-hurricaneSpiralTightness">2.5</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Arm Width</label>
+                <input type="range" id="param-hurricaneSpiralArmWidth" class="glass-slider" min="0.1" max="1" step="0.05" value="0.4">
+                <span class="glass-value" id="value-hurricaneSpiralArmWidth">0.40</span>
+            </div>
+
+            <div class="glass-control">
+                <label>Cloud Noise</label>
+                <input type="range" id="param-hurricaneSpiralNoise" class="glass-slider" min="0" max="1" step="0.05" value="0.3">
+                <span class="glass-value" id="value-hurricaneSpiralNoise">0.30</span>
+            </div>
         </div>
 
         <!-- Advanced Physics Section -->

@@ -4,16 +4,19 @@ precision highp float;
 /**
  * Display shader - renders dye field with shading, bloom, sunrays, and dithering.
  * Pavel-style rendering with 3D lighting effect.
+ * Hurricane mode adds spiral density overlay for visible arm structure.
  */
 
 uniform sampler2D u_texture;
 uniform sampler2D u_bloom;
 uniform sampler2D u_sunrays;
+uniform sampler2D u_spiralDensity;
 uniform vec2 u_texelSize;
 uniform float u_bloomIntensity;
 uniform bool u_bloomEnabled;
 uniform bool u_shadingEnabled;
 uniform bool u_sunraysEnabled;
+uniform bool u_hurricaneMode;
 
 in vec2 v_texCoord;
 out vec4 fragColor;
@@ -26,6 +29,25 @@ vec3 linearToGamma(vec3 color) {
 
 void main() {
     vec3 c = texture(u_texture, v_texCoord).rgb;
+
+    // HURRICANE MODE - composite spiral density with dye
+    // This creates visible spiral arm structure
+    if (u_hurricaneMode) {
+        float spiralDensity = texture(u_spiralDensity, v_texCoord).r;
+
+        // Modulate brightness by spiral density
+        // Arms appear brighter, gaps appear darker
+        float brightnessModulation = 0.3 + spiralDensity * 0.7;
+        c *= brightnessModulation;
+
+        // Add white cloud overlay in dense areas (like satellite imagery)
+        vec3 cloudColor = vec3(0.95, 0.97, 1.0);
+        c = mix(c, c + cloudColor * 0.4, spiralDensity * spiralDensity);
+
+        // Boost saturation in arms for more vivid colors
+        float luminance = dot(c, vec3(0.299, 0.587, 0.114));
+        c = mix(vec3(luminance), c, 1.0 + spiralDensity * 0.3);
+    }
 
     // SHADING - creates 3D "oily" effect from color gradients (like Pavel)
     // STRONGER contrast than before!

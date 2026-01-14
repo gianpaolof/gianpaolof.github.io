@@ -141,7 +141,8 @@ export class FluidSolver {
             vorticity: this._programs.vorticity,
             splat: this._programs.splat,
             clear: this._programs.clear,
-            hurricane: this._programs.hurricane
+            hurricane: this._programs.hurricane,
+            spiralDensity: this._programs.spiralDensity
         }, this._fbos, this.config);
 
         // Create VAO for attribute-less rendering
@@ -302,8 +303,9 @@ export class FluidSolver {
         this._programs.sunraysMask = createProgram(gl, s.quadVert, s.sunraysMaskFrag);
         this._programs.sunrays = createProgram(gl, s.quadVert, s.sunraysFrag);
 
-        // Hurricane spiral shader
+        // Hurricane spiral shaders
         this._programs.hurricane = createProgram(gl, s.quadVert, s.hurricaneFrag);
+        this._programs.spiralDensity = createProgram(gl, s.quadVert, s.spiralDensityFrag);
     }
 
     /**
@@ -351,6 +353,17 @@ export class FluidSolver {
         this._fbos.dye = new DoubleFBO(
             gl, dyeSize, dyeSize, DYE_FORMAT
         );
+
+        // Spiral density field (single buffer, same resolution as dye)
+        const spiralDensityTexture = createTexture(
+            gl, dyeSize, dyeSize, PRESSURE_FORMAT
+        );
+        this._fbos.spiralDensity = {
+            texture: spiralDensityTexture,
+            framebuffer: createFramebuffer(gl, spiralDensityTexture),
+            width: dyeSize,
+            height: dyeSize
+        };
 
         // Note: Bloom and sunrays FBOs are now managed by EffectsRenderer
     }
@@ -510,10 +523,19 @@ export class FluidSolver {
             gl.uniform1i(program.uniforms.u_sunrays, 2);
         }
 
+        // Bind spiral density texture for hurricane mode
+        const hurricaneMode = this.config.hurricaneEnabled && this.config.hurricaneSpiralDensity;
+        if (hurricaneMode) {
+            gl.activeTexture(gl.TEXTURE3);
+            gl.bindTexture(gl.TEXTURE_2D, this._fbos.spiralDensity.texture);
+            gl.uniform1i(program.uniforms.u_spiralDensity, 3);
+        }
+
         gl.uniform1f(program.uniforms.u_bloomIntensity, bloomIntensity);
         gl.uniform1i(program.uniforms.u_bloomEnabled, bloomEnabled ? 1 : 0);
         gl.uniform1i(program.uniforms.u_shadingEnabled, this.config.shadingEnabled ? 1 : 0);
         gl.uniform1i(program.uniforms.u_sunraysEnabled, sunraysEnabled ? 1 : 0);
+        gl.uniform1i(program.uniforms.u_hurricaneMode, hurricaneMode ? 1 : 0);
         gl.uniform2f(
             program.uniforms.u_texelSize,
             1.0 / this.config.dyeSize,
@@ -706,6 +728,9 @@ export class FluidSolver {
 
         gl.deleteTexture(this._fbos.curl.texture);
         gl.deleteFramebuffer(this._fbos.curl.framebuffer);
+
+        gl.deleteTexture(this._fbos.spiralDensity.texture);
+        gl.deleteFramebuffer(this._fbos.spiralDensity.framebuffer);
 
         // Destroy effects renderer (handles bloom and sunrays FBOs)
         if (this._effects) {

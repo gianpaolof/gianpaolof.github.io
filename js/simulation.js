@@ -173,6 +173,14 @@ export class FluidSimulation {
         }
 
         // =====================================================================
+        // STEP 4.6: Render spiral density (for visualization)
+        // Generates procedural spiral arm pattern for hurricane overlay.
+        // =====================================================================
+        if (config.hurricaneEnabled && config.hurricaneSpiralDensity) {
+            this._renderSpiralDensity(aspectRatio, drawQuad);
+        }
+
+        // =====================================================================
         // STEP 5: Compute divergence
         // div(u) = ∂u/∂x + ∂v/∂y
         // This measures how much fluid is "created" or "destroyed" at each point.
@@ -546,6 +554,54 @@ export class FluidSimulation {
         this._fbos.velocity.bindWrite();
         drawQuad();
         this._fbos.velocity.swap();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    // =========================================================================
+    // HURRICANE SPIRAL DENSITY
+    // =========================================================================
+
+    /**
+     * Renders procedural spiral density texture for hurricane visualization.
+     *
+     * This creates a density field with visible spiral arm structure,
+     * which is then composited with the dye field in the display shader.
+     *
+     * @private
+     * @param {number} aspectRatio - Canvas aspect ratio
+     * @param {Function} drawQuad - Quad drawing function
+     */
+    _renderSpiralDensity(aspectRatio, drawQuad) {
+        const gl = this._gl;
+        const program = this._programs.spiralDensity;
+        const config = this._config;
+
+        program.use();
+
+        // Hurricane center and structure
+        gl.uniform2f(program.uniforms.u_center,
+            config.hurricaneCenterX,
+            config.hurricaneCenterY
+        );
+        gl.uniform1f(program.uniforms.u_eyeRadius, config.hurricaneEyeRadius);
+        gl.uniform1f(program.uniforms.u_maxRadius, config.hurricaneMaxRadius);
+
+        // Spiral arm parameters
+        gl.uniform1f(program.uniforms.u_numArms, config.hurricaneSpiralArms);
+        gl.uniform1f(program.uniforms.u_tightness, config.hurricaneSpiralTightness);
+        gl.uniform1f(program.uniforms.u_armWidth, config.hurricaneSpiralArmWidth);
+        gl.uniform1f(program.uniforms.u_noiseStrength, config.hurricaneSpiralNoise);
+
+        // Animation and display
+        gl.uniform1f(program.uniforms.u_time, this._time);
+        gl.uniform1f(program.uniforms.u_rotation, config.hurricaneRotation);
+        gl.uniform1f(program.uniforms.u_aspectRatio, aspectRatio);
+
+        // Render to spiral density FBO
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._fbos.spiralDensity.framebuffer);
+        gl.viewport(0, 0, this._fbos.spiralDensity.width, this._fbos.spiralDensity.height);
+        drawQuad();
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }

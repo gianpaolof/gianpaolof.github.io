@@ -128,7 +128,13 @@ const PRESETS = {
         hurricaneEyeRadius: 0.025,
         hurricaneMaxRadius: 0.4,
         hurricaneExpansion: 0.15,
-        hurricaneRotation: 1
+        hurricaneRotation: 1,
+        // Spiral density visualization
+        hurricaneSpiralDensity: true,
+        hurricaneSpiralArms: 5,
+        hurricaneSpiralTightness: 2.5,
+        hurricaneSpiralArmWidth: 0.4,
+        hurricaneSpiralNoise: 0.3
     },
     cyclone: {
         name: 'Cyclone (Southern)',
@@ -145,7 +151,13 @@ const PRESETS = {
         hurricaneEyeRadius: 0.02,
         hurricaneMaxRadius: 0.45,
         hurricaneExpansion: 0.2,
-        hurricaneRotation: -1
+        hurricaneRotation: -1,
+        // Spiral density visualization
+        hurricaneSpiralDensity: true,
+        hurricaneSpiralArms: 6,
+        hurricaneSpiralTightness: 2.2,
+        hurricaneSpiralArmWidth: 0.35,
+        hurricaneSpiralNoise: 0.35
     }
 };
 
@@ -289,6 +301,31 @@ class AdvancedControlPanel {
                 options: [1, -1],
                 labels: ['CCW (Northern)', 'CW (Southern)'],
                 configKey: 'hurricaneRotation'
+            },
+            // Hurricane spiral density visualization
+            hurricaneSpiralDensity: {
+                type: 'checkbox',
+                configKey: 'hurricaneSpiralDensity'
+            },
+            hurricaneSpiralArms: {
+                type: 'range',
+                min: 2, max: 12, step: 1, decimals: 0,
+                configKey: 'hurricaneSpiralArms'
+            },
+            hurricaneSpiralTightness: {
+                type: 'range',
+                min: 0.5, max: 5, step: 0.1, decimals: 1,
+                configKey: 'hurricaneSpiralTightness'
+            },
+            hurricaneSpiralArmWidth: {
+                type: 'range',
+                min: 0.1, max: 1, step: 0.05, decimals: 2,
+                configKey: 'hurricaneSpiralArmWidth'
+            },
+            hurricaneSpiralNoise: {
+                type: 'range',
+                min: 0, max: 1, step: 0.05, decimals: 2,
+                configKey: 'hurricaneSpiralNoise'
             }
         };
 
