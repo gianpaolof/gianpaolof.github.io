@@ -209,6 +209,16 @@ body {
   text-transform: uppercase;
 }
 
+.hero-subtitle {
+  font-size: clamp(0.7rem, 2vw, 0.9rem);
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: 0 0 15px rgba(0, 0, 0, 0.8);
+  margin: -1em 0 1.5em;
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+
 .hero-skills {
   display: flex;
   flex-wrap: wrap;
