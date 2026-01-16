@@ -1218,6 +1218,68 @@ body {
 }
 
 /* ============================================
+   15.5. Mode Toggle Button
+   ============================================ */
+
+.mode-toggle-btn {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(15, 15, 35, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: var(--color-accent);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all var(--transition-base);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.mode-toggle-btn:hover {
+  transform: scale(1.05);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow:
+    0 6px 32px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(0, 212, 255, 0.25);
+}
+
+.mode-toggle-btn:active {
+  transform: scale(0.98);
+}
+
+.mode-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.mode-toggle-btn #mode-label {
+  color: var(--color-text);
+}
+
+.mode-toggle-btn .mode-icon {
+  font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+  .mode-toggle-btn {
+    bottom: 16px;
+    left: 16px;
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 0.75rem;
+  }
+}
+
+/* ============================================
    16. Glassmorphism Control Panel
    ============================================ */
 

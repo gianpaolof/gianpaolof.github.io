@@ -4,12 +4,14 @@
  */
 
 import { FluidSolver, DEFAULT_CONFIG } from './fluid-solver.js';
+import { WaterSolver } from './water-solver.js';
 import { InputManager } from './input.js';
 import { UIManager, AdvancedControlPanel } from './ui.js';
 import { detectQuality, QUALITY_PRESETS } from './gl-utils.js';
 
 // Global state
 let solver = null;
+let waterSolver = null;
 let inputManager = null;
 let uiManager = null;
 let advancedPanel = null;
@@ -17,6 +19,9 @@ let animationId = null;
 let lastTime = 0;
 let frameCount = 0;
 let fpsTime = 0;
+
+// Simulation mode: 'fluid' or 'water'
+let simulationMode = 'fluid';
 
 /**
  * Initialize the fluid simulation
@@ -74,6 +79,12 @@ async function init() {
         // Initialize advanced control panel
         advancedPanel = new AdvancedControlPanel(solver, DEFAULT_CONFIG);
 
+        // Initialize water solver (lazy - will be loaded when switched)
+        waterSolver = null;
+
+        // Set up mode toggle button
+        setupModeToggle(canvas);
+
         // Set up context loss handling
         setupContextLossHandling(canvas);
 
@@ -107,38 +118,58 @@ function animate(currentTime) {
     // Cap dt to prevent instability (30fps minimum)
     dt = Math.min(dt, 0.033);
 
-    // Skip if paused
-    if (solver.paused) {
-        return;
+    // Handle based on simulation mode
+    if (simulationMode === 'water' && waterSolver) {
+        // Water simulation mode
+        if (waterSolver.paused) return;
+
+        // Get interaction from input manager
+        const forces = inputManager.getForces();
+
+        // Apply drops (water uses drops instead of forces)
+        forces.forEach(force => {
+            waterSolver.addDrop(
+                force.position.x,
+                force.position.y,
+                0.04,   // radius
+                0.008   // strength (very small for subtle ripples)
+            );
+        });
+
+        // Update water simulation
+        waterSolver.update(dt);
+    } else {
+        // Fluid simulation mode (default)
+        if (solver.paused) return;
+
+        // Get forces from input manager
+        const forces = inputManager.getForces();
+        const dyes = inputManager.getDyes();
+
+        // Apply forces and dyes
+        forces.forEach(force => {
+            solver.addForce(
+                [force.position.x, force.position.y],
+                [force.direction.x, force.direction.y],
+                force.radius,
+                force.strength
+            );
+        });
+
+        dyes.forEach(dye => {
+            solver.addDye(
+                [dye.position.x, dye.position.y],
+                dye.color,
+                dye.radius
+            );
+        });
+
+        // Step simulation
+        solver.step(dt);
+
+        // Render
+        solver.render();
     }
-
-    // Get forces from input manager
-    const forces = inputManager.getForces();
-    const dyes = inputManager.getDyes();
-
-    // Apply forces and dyes
-    forces.forEach(force => {
-        solver.addForce(
-            [force.position.x, force.position.y],
-            [force.direction.x, force.direction.y],
-            force.radius,
-            force.strength
-        );
-    });
-
-    dyes.forEach(dye => {
-        solver.addDye(
-            [dye.position.x, dye.position.y],
-            dye.color,
-            dye.radius
-        );
-    });
-
-    // Step simulation
-    solver.step(dt);
-
-    // Render
-    solver.render();
 
     // Update FPS counter
     frameCount++;
@@ -150,6 +181,100 @@ function animate(currentTime) {
         if (uiManager) {
             uiManager.updateFPS(fps);
         }
+    }
+}
+
+/**
+ * Set up mode toggle button
+ */
+function setupModeToggle(canvas) {
+    const toggleBtn = document.getElementById('mode-toggle');
+    if (!toggleBtn) return;
+
+    toggleBtn.addEventListener('click', async () => {
+        await switchMode(simulationMode === 'fluid' ? 'water' : 'fluid', canvas);
+    });
+}
+
+/**
+ * Switch between simulation modes
+ */
+async function switchMode(mode, canvas) {
+    if (mode === simulationMode) return;
+
+    const toggleBtn = document.getElementById('mode-toggle');
+    const modeLabel = document.getElementById('mode-label');
+
+    // Update button state during loading
+    if (toggleBtn) {
+        toggleBtn.disabled = true;
+        toggleBtn.textContent = 'Loading...';
+    }
+
+    try {
+        if (mode === 'water') {
+            // Switch to water mode
+            solver.pause();
+
+            // Initialize water solver if not done
+            if (!waterSolver) {
+                waterSolver = new WaterSolver(canvas, {}, {
+                    gl: solver.gl,
+                    isWebGL2: true
+                });
+                await waterSolver.init();
+                // Set initial size for correct aspect ratio
+                waterSolver.resize(canvas.width, canvas.height);
+            }
+
+            waterSolver.resume();
+            simulationMode = 'water';
+
+            // Add initial drops to show the simulation is working
+            waterSolver.addDrop(0.5, 0.5, 0.05, 0.01);
+            setTimeout(() => waterSolver.addDrop(0.3, 0.4, 0.04, 0.008), 300);
+            setTimeout(() => waterSolver.addDrop(0.7, 0.6, 0.045, 0.009), 600);
+
+            if (modeLabel) modeLabel.textContent = 'Water';
+            if (toggleBtn) toggleBtn.textContent = '🌊 → 🎨';
+
+            // Update hero hint
+            const hint = document.querySelector('.hero-hint');
+            if (hint) hint.textContent = 'click to create ripples';
+
+        } else {
+            // Switch to fluid mode
+            if (waterSolver) {
+                waterSolver.pause();
+            }
+
+            solver.resume();
+            simulationMode = 'fluid';
+
+            if (modeLabel) modeLabel.textContent = 'Fluid';
+            if (toggleBtn) toggleBtn.textContent = '🎨 → 🌊';
+
+            // Update hero hint
+            const hint = document.querySelector('.hero-hint');
+            if (hint) hint.textContent = 'drag to interact';
+        }
+
+        // Show/hide fluid controls based on mode
+        const fluidControls = document.getElementById('panel-content');
+        if (fluidControls) {
+            // Could hide fluid-specific controls in water mode
+            // For now, just leave them visible
+        }
+
+    } catch (error) {
+        console.error('Failed to switch mode:', error);
+        // Revert to fluid mode on error
+        simulationMode = 'fluid';
+        solver.resume();
+    }
+
+    if (toggleBtn) {
+        toggleBtn.disabled = false;
     }
 }
 
@@ -243,6 +368,9 @@ window.addEventListener('resize', (() => {
             if (canvas && solver) {
                 resizeCanvas(canvas);
                 solver.resize(canvas.width, canvas.height);
+                if (waterSolver) {
+                    waterSolver.resize(canvas.width, canvas.height);
+                }
             }
         }, 150);
     };
@@ -258,13 +386,17 @@ if (document.readyState === 'loading') {
 // Export for debugging
 window.fluidSim = {
     get solver() { return solver; },
+    get waterSolver() { return waterSolver; },
     get inputManager() { return inputManager; },
     get uiManager() { return uiManager; },
     get advancedPanel() { return advancedPanel; },
+    get mode() { return simulationMode; },
     showFPS: (show) => uiManager?.showFPS(show),
     clear: () => solver?.clear(),
     pause: () => solver?.pause(),
     resume: () => solver?.resume(),
     setParam: (name, value) => advancedPanel?.setParam(name, value),
-    getParams: () => advancedPanel?.getParams()
+    getParams: () => advancedPanel?.getParams(),
+    switchToWater: () => switchMode('water', document.getElementById('fluid-canvas')),
+    switchToFluid: () => switchMode('fluid', document.getElementById('fluid-canvas'))
 };
